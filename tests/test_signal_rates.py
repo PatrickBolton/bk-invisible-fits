@@ -74,13 +74,7 @@ def test_templates_are_non_negative():
     assert np.all(s >= 0)
 
 
-@pytest.mark.parametrize("experiment", [
-    "BelleII",
-    pytest.param("BaBar", marks = pytest.mark.xfail(reason =
-        "The quintic BaBar efficiency spline through independently fluctuated points dips below "
-        "zero near the edges; clipping it distorts the toys (sd in bin 0 about 9% low, mean up "
-        "to 5% high), so the toys no longer test the linear model there.")),
-])
+@pytest.mark.parametrize("experiment", ["BelleII", "BaBar"])
 def test_linear_response_reproduces_toy_covariance(experiment):
     # s + J u with u ~ N(0, 1) implies cov = J J^T; compare with full nonlinear toys
     if experiment == "BelleII":

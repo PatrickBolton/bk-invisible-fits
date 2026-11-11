@@ -108,7 +108,7 @@ def dNdqsqrec_BaBar(qsqrec, SM, mX, cNP, Lambda, is_ident = False, a_vals = A_VA
     
     cX, cXY = cNP[0:2], cNP[2:6]
     
-    eff = efficiency(eff_bin_cents_BaBar * mB**2, eff_vals, 5)
+    eff = efficiency(eff_bin_cents_BaBar * mB**2, eff_vals, 3)
     
     if SM == True:
         dNdqsqrec = NB_BaBar * (dBdqsq_SM(qsqrec, False, a_vals)[1] * eff(qsqrec)
@@ -128,7 +128,7 @@ def Nrec_BaBar(SM, mX, cNP, Lambda, is_ident = False, a_vals = A_VALS_GRDV, eff_
 
     cX = cNP[0:2]
 
-    eff = efficiency(eff_bin_cents_BaBar * mB**2, eff_vals, 5)
+    eff = efficiency(eff_bin_cents_BaBar * mB**2, eff_vals, 3)
 
     Nrec_vals = []
     for c in bin_cents_BaBar:
