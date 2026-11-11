@@ -9,9 +9,7 @@ wheels/
 # Virtual environments
 .venv
 
-# Data and outputs (remove these lines if you want data tracked in git)
-data/*
-!data/.gitkeep
+# Outputs
 output/
 *.png
 *.pdf

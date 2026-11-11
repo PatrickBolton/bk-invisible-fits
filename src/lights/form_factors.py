@@ -3,10 +3,8 @@ from .load_data import load, read_csv_to_array
 
 import numpy as np
 import numpy.random as npr
-from pathlib import Path
 
-# Project data directory: <project root>/data
-DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "form_factors"
+from .paths import FORM_FACTOR_DIR as DATA_DIR
 
 # Pole masses for the B -> P and B -> V form factors
 Mfp = 5.4154

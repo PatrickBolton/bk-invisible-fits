@@ -8,8 +8,7 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 from pathlib import Path
 
-# Project data directory: <project root>/data
-DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "BtoKEmiss"
+from .paths import BTOKEMISS_DIR as DATA_DIR   # Belle II and BaBar inputs
 
 def sq(x):
     return np.squeeze(np.array(x))
