@@ -2,10 +2,10 @@ import numpy as np
 
 from .constants import mB, mBs0, mK, mKs, mb, ms, tauB, tauB0, tauBs, fBs, CSM
 from .kinematics import lims_2body, lims_3body, pKvec, bX
-from .form_factors import aK_vals_GRDV, aKs_vals_GRDV, fpf, f0f, fTf, Vf, A0f, A1f, A12f, T1f, T2f, T23f
+from .form_factors import aK_vals_GRDV, aKs_vals_GRDV, A_VALS_GRDV, fpf, f0f, fTf, Vf, A0f, A1f, A12f, T1f, T2f, T23f
 
 # B -> K(*)X branching fractions
-def B_BKphi(mphi, Ci, a_vals = [aK_vals_GRDV, aKs_vals_GRDV]):
+def B_BKphi(mphi, Ci, a_vals = A_VALS_GRDV):
     """Branching fraction for B -> K(*) phi."""
     
     CSL, CSR = Ci
@@ -39,7 +39,7 @@ def B_BKphi(mphi, Ci, a_vals = [aK_vals_GRDV, aKs_vals_GRDV]):
     
     return np.array([BK_rate, BKs_rate, BKs_rate_L, BKs_rate_T])
 
-def B_BKV(mV, Ci, Lambda = 1, a_vals = [aK_vals_GRDV, aKs_vals_GRDV]):
+def B_BKV(mV, Ci, Lambda = 1, a_vals = A_VALS_GRDV):
     """Branching fraction for B -> K(*) V."""
 
     CVL, CVR, CTL, CTR = Ci
@@ -97,11 +97,11 @@ def B_BKV(mV, Ci, Lambda = 1, a_vals = [aK_vals_GRDV, aKs_vals_GRDV]):
     return np.array([BK_rate, BKs_rate, BKs_rate_L, BKs_rate_T])
 
 # B -> K(*)XX branching fractions
-def dBdqsq_SM(qsq, is_ident = False, a_vals = [aK_vals_GRDV, aKs_vals_GRDV]):
+def dBdqsq_SM(qsq, is_ident = False, a_vals = A_VALS_GRDV):
     """SM differential branching fraction for B -> K(*) v v in q^2."""
     return 3 * dBdqsq_BKpsipsi(qsq, 0., [CSM/2, 0, -CSM/2, 0, 0, 0, 0, 0, 0, 0], 1, is_ident, a_vals)
 
-def dBdqsq_BKphiphi(qsq, mphi, Ci, Lambda = 1, is_ident = False, a_vals = [aK_vals_GRDV, aKs_vals_GRDV]):
+def dBdqsq_BKphiphi(qsq, mphi, Ci, Lambda = 1, is_ident = False, a_vals = A_VALS_GRDV):
     """Differential branching fraction for B -> K(*) phi phi in q^2."""
    
     a = 1 + is_ident
@@ -153,7 +153,7 @@ def dBdqsq_BKphiphi(qsq, mphi, Ci, Lambda = 1, is_ident = False, a_vals = [aK_va
     
     return np.array([BK_rate, BKs_rate, BKs_rate_L, BKs_rate_T])
 
-def dBdqsq_BKpsipsi(qsq, mpsi, Ci, Lambda = 1, is_ident = False, a_vals = [aK_vals_GRDV, aKs_vals_GRDV]):
+def dBdqsq_BKpsipsi(qsq, mpsi, Ci, Lambda = 1, is_ident = False, a_vals = A_VALS_GRDV):
     """Differential branching fraction for B -> K(*) psi psi in q^2."""
 
     a = 1 + is_ident
@@ -239,7 +239,7 @@ def dBdqsq_BKpsipsi(qsq, mpsi, Ci, Lambda = 1, is_ident = False, a_vals = [aK_va
     
     return np.array([BK_rate, BKs_rate, BKs_rate_L, BKs_rate_T])
 
-def dBdqsq_BKVV(qsq, mV, Ci, Lambda = 1, is_ident = False, a_vals = [aK_vals_GRDV, aKs_vals_GRDV]):
+def dBdqsq_BKVV(qsq, mV, Ci, Lambda = 1, is_ident = False, a_vals = A_VALS_GRDV):
     """Differential branching fraction for B -> K(*) V V in q^2."""
 
     a = 1 + is_ident
@@ -273,7 +273,7 @@ def dBdqsq_BKVV(qsq, mV, Ci, Lambda = 1, is_ident = False, a_vals = [aK_vals_GRD
     z = np.zeros_like(BK_rate)
     return np.array([BK_rate, z, z, z])
 
-def dBdqsq_BKPsiPsi(qsq, mPsi, Ci, Lambda = 1, is_ident = False, a_vals = [aK_vals_GRDV, aKs_vals_GRDV]):
+def dBdqsq_BKPsiPsi(qsq, mPsi, Ci, Lambda = 1, is_ident = False, a_vals = A_VALS_GRDV):
     """Differential branching fraction for B -> K(*) Psi Psi in q^2."""
 
     a = 1 + is_ident
@@ -416,22 +416,29 @@ cdict = {
     'CTPL_FF': (5, 12), 'CTPR_FF': (5, 13)}
 
 def B_tot(mX, cX, Lambda, a_vals):
-    """Total branching fraction for B -> K(*) X."""    
+    """Total branching fraction for B -> K(*) X. Channels whose couplings are all zero are skipped."""
     Ci_1, Ci_2 = cX[0,0:2], cX[1,0:4]
 
-    rates = (B_BKphi(mX, Ci_1, a_vals) 
-             + B_BKV(mX, Ci_2, Lambda, a_vals))
+    rates = np.zeros(4)
+    if np.any(Ci_1):
+        rates = rates + B_BKphi(mX, Ci_1, a_vals)
+    if np.any(Ci_2):
+        rates = rates + B_BKV(mX, Ci_2, Lambda, a_vals)
 
     return rates
 
-def dBdqsq_tot(qsq, mX, cXY, Lambda, is_ident = False, a_vals = [aK_vals_GRDV, aKs_vals_GRDV]):
-    """Total differential branching fraction for B -> K(*) X X in q^2."""    
+def dBdqsq_tot(qsq, mX, cXY, Lambda, is_ident = False, a_vals = A_VALS_GRDV):
+    """Total differential branching fraction for B -> K(*) X X in q^2.
+
+    Channels whose couplings are all zero are skipped, since usually only one is switched on.
+    """
     Ci_1, Ci_2, Ci_3, Ci_4 = cXY[0,0:4], cXY[1,0:10], cXY[2,0:2], cXY[3,0:14]
 
-    rates = (  dBdqsq_BKphiphi(qsq, mX, Ci_1, Lambda, is_ident, a_vals) 
-             + dBdqsq_BKpsipsi(qsq, mX, Ci_2, Lambda, is_ident, a_vals)
-             +     dBdqsq_BKVV(qsq, mX, Ci_3, Lambda, is_ident, a_vals)
-             + dBdqsq_BKPsiPsi(qsq, mX, Ci_4, Lambda, is_ident, a_vals))
+    rates = np.zeros((4,) + np.shape(qsq))
+    for rate, Ci in ((dBdqsq_BKphiphi, Ci_1), (dBdqsq_BKpsipsi, Ci_2),
+                     (dBdqsq_BKVV, Ci_3), (dBdqsq_BKPsiPsi, Ci_4)):
+        if np.any(Ci):
+            rates = rates + rate(qsq, mX, Ci, Lambda, is_ident, a_vals)
 
     return rates
 

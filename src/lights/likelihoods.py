@@ -1,4 +1,8 @@
-from lights.load_data import *
+import numpy as np
+
+from lights.load_data import (Nbins, obs, b_cont, b_charged, b_neutral, w_cont, w_charged, w_neutral,
+                              Nbins_BaBar, obs_BaBar_K0, b_BaBar_K0, b_BaBar_peak_K0, b_BaBar_comb_K0,
+                              b_BaBar_K0_invcov, sigrecB0Ks0, NiBs, NinormB0Ks0)
 from lights.signal_rates import (s_SM_BelleII, s_SM_BaBar, J_SM_BelleII, J_SM_BaBar,
                                  NU_BelleII, NU_BaBar, signal_template, Nrec_BelleII, Nrec_BaBar)
 from lights.branching_fractions import B_Bstot

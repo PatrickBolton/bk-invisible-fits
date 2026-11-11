@@ -9,7 +9,6 @@ nonlinear toys (lights.signal_rates.dNdqsq_cov), for the SM and an example NP te
 """
 
 import numpy as np
-import numpy.random as npr
 
 from lights.load_data import eff_vals, eff_cov, eff_BaBar_K0_vals, eff_BaBar_K0_cov
 from lights.signal_rates import dNdqsq_cov, Nrec_BelleII, Nrec_BaBar, signal_template
@@ -26,8 +25,7 @@ np.set_printoptions(precision = 3, linewidth = 200)
 for name, Nrec, e_vals, e_cov in [("BelleII", Nrec_BelleII, eff_vals, eff_cov),
                                   ("BaBar", Nrec_BaBar, eff_BaBar_K0_vals, eff_BaBar_K0_cov)]:
     for label, SM, mX, c, Lambda in cases:
-        npr.seed(SEED)
-        _, C_toys = dNdqsq_cov(NTOYS, Nrec, SM, mX, c, Lambda, eff_vals = e_vals, eff_cov = e_cov)
+        _, C_toys = dNdqsq_cov(NTOYS, Nrec, SM, mX, c, Lambda, eff_vals = e_vals, eff_cov = e_cov, rng = SEED)
         s0, J = signal_template(name, SM, mX, c, Lambda)
         C_lin = J @ J.T
 

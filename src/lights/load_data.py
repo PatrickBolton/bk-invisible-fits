@@ -1,11 +1,8 @@
 import numpy as np
-import numpy.random as npr
 from numpy.linalg import multi_dot, inv
 from scipy.interpolate import RectBivariateSpline
 import pandas as pd
 import csv
-import matplotlib.pyplot as plt
-import matplotlib.colors as colors
 from pathlib import Path
 
 from .paths import BTOKEMISS_DIR as DATA_DIR   # Belle II and BaBar inputs
@@ -45,19 +42,6 @@ def factorise(C, rtol = 1e-6):
     lam, U = np.linalg.eigh(C)
     keep = lam > rtol * lam.max()
     return np.ascontiguousarray(U * np.where(keep, np.sqrt(np.abs(lam)), 0.))
-
-def categorical_cmap(s, nc, nsc, cmap="tab10"):
-    ccolors = plt.get_cmap(cmap)(np.arange(s, nc, dtype=int))
-    cols = np.zeros((nc*nsc, 3))
-    for i, c in enumerate(ccolors):
-        chsv = colors.rgb_to_hsv(c[:3])
-        arhsv = np.tile(chsv,nsc).reshape(nsc,3)
-        arhsv[:,1] = np.linspace(chsv[1],0.25,nsc)
-        arhsv[:,2] = np.linspace(chsv[2],1,nsc)
-        rgb = colors.hsv_to_rgb(arhsv)
-        cols[i*nsc:(i+1)*nsc,:] = rgb       
-    cmap = colors.ListedColormap(cols[cols > 0].reshape(-1,3))
-    return cmap
 
 ### Belle-II B+ -> K+ Inclusive Data ###
 Nbins = 20
@@ -99,9 +83,12 @@ effHad_vals = effHad_data[0]/100.
 effHad_sigma = 1/100. * (effHad_data[2] - effHad_data[1])/2.
 effHad_cov = np.diag(effHad_sigma**2)
 
-def eff_vals_gen(Ntoys, eff_vals, eff_cov):
-    """Generates random values for efficiencies."""
-    eff_vals_r = npr.multivariate_normal(eff_vals, eff_cov, size = Ntoys)
+def eff_vals_gen(Ntoys, eff_vals, eff_cov, rng = None):
+    """Generates random values for efficiencies.
+
+    rng: a seed or numpy.random.Generator, for reproducible toys (None: fresh randomness).
+    """
+    eff_vals_r = np.random.default_rng(rng).multivariate_normal(eff_vals, eff_cov, size = Ntoys)
     
     return eff_vals_r
 
@@ -112,11 +99,12 @@ qsqtrue_bins = np.linspace(-5, 25, 31)
 qsqrec_bin_cents = (qsqrec_bins[1:] + qsqrec_bins[:-1])/2
 qsqtrue_bin_cents = (qsqtrue_bins[1:] + qsqtrue_bins[:-1])/2
 
+# Quadratic spline through the smearing map, built once
+_smearing_interp = RectBivariateSpline(qsqrec_bin_cents, qsqtrue_bin_cents, np.transpose(smearing_data), kx = 2, ky = 2)
+
 def sm(qsqrec, qsqtrue):
-    """Smearing interpolation function for Belle II."""
-    smearing_interp = RectBivariateSpline(qsqrec_bin_cents, qsqtrue_bin_cents, np.transpose(smearing_data), kx = 2, ky = 2)
-    
-    return np.maximum(smearing_interp(qsqrec, qsqtrue), 0)
+    """Smearing interpolation function for Belle II (probability density in q2_rec, clipped at 0)."""
+    return np.maximum(_smearing_interp(qsqrec, qsqtrue), 0)
 
 ### BaBar B0 -> K*0 data ###
 # Number of BB-bar pairs at BaBar. The number of signal-side B0 mesons would be
@@ -141,9 +129,10 @@ b_BaBar_K0_sigma = np.sqrt(b_BaBar_K0/MCFactorBack)
 b_BaBar_K0_cov = np.diag(b_BaBar_K0_sigma**2)
 b_BaBar_K0_invcov = inv(b_BaBar_K0_cov)
 
-obs_BaBar_K0 = np.array(pd.io.json.read_json(DATA_DIR / "RateBaBarB0Ks0_PDF.json"))[0][:Nbins_BaBar]
-obs_BaBar_down_K0 = np.array(pd.io.json.read_json(DATA_DIR / "RateBaBarB0Ks0_PDF.json"))[1][:Nbins_BaBar]
-obs_BaBar_up_K0 = np.array(pd.io.json.read_json(DATA_DIR / "RateBaBarB0Ks0_PDF.json"))[2][:Nbins_BaBar]
+rate_BaBar_data = np.array(pd.io.json.read_json(DATA_DIR / "RateBaBarB0Ks0_PDF.json"))
+obs_BaBar_K0 = rate_BaBar_data[0][:Nbins_BaBar]
+obs_BaBar_down_K0 = rate_BaBar_data[1][:Nbins_BaBar]
+obs_BaBar_up_K0 = rate_BaBar_data[2][:Nbins_BaBar]
 asymmetric_error_K0 = np.array(list(zip(obs_BaBar_down_K0, obs_BaBar_up_K0))).T
 
 # Efficiencies

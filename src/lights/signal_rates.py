@@ -1,6 +1,10 @@
-from lights.load_data import *
+import numpy as np
+
+from lights.load_data import (sm, factorise, eff_vals_gen, bin_cents, bw, eff_bin_cents, eff_vals, eff_cov,
+                              NB_BaBar, bin_cents_BaBar, bw_BaBar, eff_bin_cents_BaBar,
+                              eff_BaBar_K0_vals, eff_BaBar_K0_cov)
 from lights.constants import NB, mB, mK, mKs
-from lights.form_factors import aK_vals_GRDV, aKs_vals_GRDV, aK_cov_GRDV, aKs_cov_GRDV, a_vals_gen
+from lights.form_factors import aK_vals_GRDV, aKs_vals_GRDV, aK_cov_GRDV, aKs_cov_GRDV, A_VALS_GRDV, a_vals_gen
 from lights.branching_fractions import dBdqsq_SM, dBdqsq_tot, B_tot
 
 from scipy.interpolate import interp1d
@@ -17,7 +21,7 @@ def efficiency(q2_points, eff_points, kind):
     f = interp1d(q2_points, eff_points, kind = kind, fill_value = "extrapolate")
     return lambda q2: np.maximum(f(q2), 0.)
 
-def dNdqsqrec_BelleII(qsqrec, SM, mX, cNP, Lambda, is_ident = False, a_vals = [aK_vals_GRDV, aKs_vals_GRDV], eff_vals = eff_vals, ntrue = 1000):
+def dNdqsqrec_BelleII(qsqrec, SM, mX, cNP, Lambda, is_ident = False, a_vals = A_VALS_GRDV, eff_vals = eff_vals, ntrue = 1000):
     """Number of B+ -> K+ invisible events at Belle II in the reconstructed q^2.
 
     qsqrec may be a scalar or an ascending 1D array (evaluated in one vectorised call).
@@ -68,7 +72,7 @@ def smearing_kernel(qsqtrue):
     qsqtrue = np.atleast_1d(qsqtrue)
     return np.array([np.interp(qsqtrue, _K_QT, Kb) for Kb in _K_BIN])
 
-def Nrec_BelleII(SM, mX, cNP, Lambda, is_ident = False, a_vals = [aK_vals_GRDV, aKs_vals_GRDV], eff_vals = eff_vals, ntrue = 1000):
+def Nrec_BelleII(SM, mX, cNP, Lambda, is_ident = False, a_vals = A_VALS_GRDV, eff_vals = eff_vals, ntrue = 1000):
     """Number of events in reconstructed q^2 bins for B+ -> K+ invisible at Belle II.
 
     Integrates the true-q^2 spectrum against the bin-integrated smearing kernel (see
@@ -99,7 +103,7 @@ def Nrec_BelleII(SM, mX, cNP, Lambda, is_ident = False, a_vals = [aK_vals_GRDV, 
 
 
 ### BaBar ###
-def dNdqsqrec_BaBar(qsqrec, SM, mX, cNP, Lambda, is_ident = False, a_vals = [aK_vals_GRDV, aKs_vals_GRDV], eff_vals = eff_BaBar_K0_vals):
+def dNdqsqrec_BaBar(qsqrec, SM, mX, cNP, Lambda, is_ident = False, a_vals = A_VALS_GRDV, eff_vals = eff_BaBar_K0_vals):
     "Number of events for B0 -> K*0 invisible in the reconstructed q^2."
     
     cX, cXY = cNP[0:2], cNP[2:6]
@@ -114,7 +118,7 @@ def dNdqsqrec_BaBar(qsqrec, SM, mX, cNP, Lambda, is_ident = False, a_vals = [aK_
     
     return dNdqsqrec
 
-def Nrec_BaBar(SM, mX, cNP, Lambda, is_ident = False, a_vals = [aK_vals_GRDV, aKs_vals_GRDV], eff_vals = eff_BaBar_K0_vals, npts = 41):
+def Nrec_BaBar(SM, mX, cNP, Lambda, is_ident = False, a_vals = A_VALS_GRDV, eff_vals = eff_BaBar_K0_vals, npts = 41):
     """Number of events in reconstructed q^2 bins for B0 -> K*0 invisible.
 
     BaBar has no q^2 smearing, so the 3-body pair threshold (4 mX^2) and the
@@ -144,17 +148,20 @@ def Nrec_BaBar(SM, mX, cNP, Lambda, is_ident = False, a_vals = [aK_vals_GRDV, aK
 
 
 # Estimate covariance for NP signal
-def dNdqsq_cov(Ntoys, N_rec, SM, mX, cNP, Lambda, is_ident = False, eff_vals = eff_vals, eff_cov = eff_cov):
+def dNdqsq_cov(Ntoys, N_rec, SM, mX, cNP, Lambda, is_ident = False, eff_vals = eff_vals, eff_cov = eff_cov, rng = None):
     """Theory covariance of the binned signal prediction (form factors and efficiencies).
 
     Each toy draws form factor coefficients and efficiencies, and N_rec propagates them
     (including the q^2 smearing for Belle II) to the reconstructed bins. The covariance
     is taken directly over these predictions. No events are sampled: counting
     fluctuations are already accounted for by the Poisson term of the likelihood.
-    """
 
-    a_vals_r = a_vals_gen(Ntoys)
-    eff_vals_r = np.clip(eff_vals_gen(Ntoys, eff_vals, eff_cov), 0, None)  # efficiencies cannot be negative
+    rng: a seed or numpy.random.Generator, for reproducible toys (None: fresh randomness).
+    """
+    rng = np.random.default_rng(rng)
+
+    a_vals_r = a_vals_gen(Ntoys, rng)
+    eff_vals_r = np.clip(eff_vals_gen(Ntoys, eff_vals, eff_cov, rng), 0, None)  # efficiencies cannot be negative
 
     bin_collect = np.array([N_rec(SM, mX, cNP, Lambda, is_ident, a_vals_r[i], eff_vals_r[i])
                             for i in tqdm(range(Ntoys), desc="Processing")])

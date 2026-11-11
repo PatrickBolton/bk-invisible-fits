@@ -1,6 +1,4 @@
 import numpy as np
-import numpy.random as npr
-from numpy.linalg import multi_dot, inv
 from scipy.special import xlogy
 
 def reduced_chisq(m, obs, n_unconstrained = 1):
