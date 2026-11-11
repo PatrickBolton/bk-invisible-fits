@@ -1,0 +1,28 @@
+[project]
+name = "lights"
+version = "0.1.0"
+description = "B -> K(*) plus invisible analysis tools"
+readme = "README.md"
+authors = [
+    { name = "Patrick Bolton", email = "patrick.d.bolton@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "iminuit>=2.33.0",
+    "joblib>=1.6.0",
+    "matplotlib>=3.11.2",
+    "numba>=0.68.1",
+    "numpy>=2.5.4",
+    "pandas>=3.1.1",
+    "scipy>=1.18.1",
+    "tqdm>=4.70.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.6,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.4.0",
+]
