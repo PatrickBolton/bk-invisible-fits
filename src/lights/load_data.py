@@ -120,6 +120,8 @@ def sm(qsqrec, qsqtrue):
     return np.maximum(smearing_interp(qsqrec, qsqtrue), 0)
 
 ### BaBar B0 -> K*0 data ###
+# Number of BB-bar pairs at BaBar. The number of signal-side B0 mesons would be
+# 2 * f(00) * NB_BaBar; that factor is assumed to be absorbed in the signal efficiencies.
 NB_BaBar = 471e6
 
 Nbins_BaBar = 7

@@ -4,13 +4,15 @@ import numpy as np
 
 Lumi = 362.
 SigmaUps4S = 387./362. * 1e6
-NB = Lumi * SigmaUps4S # Number of B mesons
+# Number of BB-bar pairs at Belle II. The number of signal-side B+ mesons would be
+# 2 * f(+-) * NB; that factor is assumed to be absorbed in the signal efficiencies.
+NB = Lumi * SigmaUps4S
 
 # Meson masses
 mB = 5.27934 # B+ meson mass
 mBs0 = 5.36689 # Bs meson mass
 mK = 0.493677 # K+ meson mass
-mKs = 0.89166 # K*(892)+ meson mass
+mKs = 0.89555 # K*(892)0 meson mass (the K* rates are for B0 -> K*0, with tauB0)
 
 mb = 4.87 # b quark mass
 ms = 0.07966 # s quark mass
