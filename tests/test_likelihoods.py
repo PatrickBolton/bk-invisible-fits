@@ -116,3 +116,13 @@ def test_scan_minimum_is_close_to_zero():
     for name, a in zip(["BelleII", "BaBar", "LEP", "Combined"], res):
         assert np.isfinite(a).all(), name
         assert -0.05 < a.min() < 1.0, name
+
+
+def test_reduced_chisq_counts_free_strengths():
+    m_SM = min_logLL(logLL_BelleII)[2]
+    c = couplings(CSL_s = 1e-8, CSR_s = 1e-8)
+    m_NP = min_logLL(logLL_BelleII, None, None, 2.1, c, ZERO, 1., NP = 1)[2]
+    assert reduced_chisq(m_SM, obs) == pytest.approx(reduced_chisq(m_SM, obs, 1))
+    assert reduced_chisq(m_NP, obs) == pytest.approx(reduced_chisq(m_NP, obs, 1))   # x0 fixed, x1 free
+    m_free = _fit("BelleII", np_templates("BelleII", 2.1, c), _x_init("BelleII"), ["x2"])
+    assert reduced_chisq(m_free, obs) == pytest.approx(reduced_chisq(m_free, obs, 2))

@@ -73,7 +73,9 @@ def B_BKV(mV, Ci, Lambda = 1, a_vals = A_VALS_GRDV):
                   + 4*np.real(hV*np.conjugate(hT)) * pK**2/((mB + mK)*Lambda) * fp * fT)
               ) * limsK
     
-    BKs_rate = (tauB0 * pKs/(2*np.pi) 
+    def Ks_rate(A1, V, T1, T2):
+        "K* rate for the given transverse form factors (A1, V, T1, T2); zero them for the longitudinal part."
+        return (tauB0 * pKs/(2*np.pi) 
                 * (2*abs(hV)**2 * (pKs/(mB + mKs) * V)**2 
                    + abs(hA)**2 * (1/2*((mB + mKs)/mB * A1)**2 + 16*(mKs/mV * A12)**2) 
                    + 8*abs(hT)**2 * (pKs/Lambda * T1)**2
@@ -81,16 +83,9 @@ def B_BKV(mV, Ci, Lambda = 1, a_vals = A_VALS_GRDV):
                    - 8*np.real(hV*np.conjugate(hT)) * pKs**2/((mB + mKs)*Lambda) * V*T1 
                    - 2*np.real(hA*np.conjugate(hTt)) * (mB + mKs)/Lambda * (delKs * A1*T2 + 16*(mKs/(mB + mKs))**2 * A12*T23))
                ) * limsKs
-    
-    A1, V, T1, T2 = 0, 0, 0, 0
-    BKs_rate_L = (tauB0 * pKs/(2*np.pi) 
-                  * (2*abs(hV)**2 * (pKs/(mB + mKs) * V)**2 
-                     + abs(hA)**2 * (1/2*((mB + mKs)/mB * A1)**2 + 16*(mKs/mV * A12)**2) 
-                     + 8*abs(hT)**2 * (pKs/Lambda * T1)**2
-                     + 2*abs(hTt)**2 * (mV/Lambda)**2 * ((mB*delKs/mV * T2)**2 + 8 * (mKs/(mB + mKs) * T23)**2)
-                     - 8*np.real(hV*np.conjugate(hT)) * pKs**2/((mB + mKs)*Lambda) * V*T1 
-                     - 2*np.real(hA*np.conjugate(hTt)) * (mB + mKs)/Lambda * (delKs * A1*T2 + 16*(mKs/(mB + mKs))**2 * A12*T23))
-                 ) * limsKs
+
+    BKs_rate = Ks_rate(A1, V, T1, T2)
+    BKs_rate_L = Ks_rate(0, 0, 0, 0)   # longitudinal K*: transverse form factors set to zero
     
     BKs_rate_T = BKs_rate - BKs_rate_L
     
@@ -136,18 +131,16 @@ def dBdqsq_BKphiphi(qsq, mphi, Ci, Lambda = 1, is_ident = False, a_vals = A_VALS
                     + abs(gVV)**2 * (pK/Lambda)**2 * bphi**2 * fp**2)
               ) * limsK
 
-    BKs_rate = (tauB0 * bphi/(96*np.pi**3) * pKs/Lambda**2 * 1/a
+    def Ks_rate(V, A1):
+        "K* rate for the given transverse form factors (V, A1); zero them for the longitudinal part."
+        return (tauB0 * bphi/(96*np.pi**3) * pKs/Lambda**2 * 1/a
                 * (3*abs(gPS)**2 * (pKs/(mb + ms) * A0)**2
                    + 2*abs(gVV)**2 * qsq/Lambda**2 * bphi**2 * (pKs/(mB + mKs) * V)**2
                    + abs(gAV)**2 * qsq/Lambda**2 * bphi**2 * (1/2*((mB + mKs)/mB * A1)**2 + 16*(mKs*A12)**2/qsq))
                ) * limsKs
-    
-    V, A1 = 0, 0
-    BKs_rate_L = (tauB0 * bphi/(96*np.pi**3) * pKs/Lambda**2 * 1/a
-                  * (3*abs(gPS)**2 * (pKs/(mb + ms) * A0)**2
-                     + 2*abs(gVV)**2 * qsq/Lambda**2 * bphi**2 * (pKs/(mB + mKs) * V)**2
-                     + abs(gAV)**2 * qsq/Lambda**2 * bphi**2 * (1/2*((mB + mKs)/mB * A1)**2 + 16*(mKs*A12)**2/qsq))
-                 ) * limsKs
+
+    BKs_rate = Ks_rate(V, A1)
+    BKs_rate_L = Ks_rate(0, 0)   # longitudinal K*: transverse form factors set to zero
     
     BKs_rate_T = BKs_rate - BKs_rate_L
     
@@ -208,7 +201,9 @@ def dBdqsq_BKpsipsi(qsq, mpsi, Ci, Lambda = 1, is_ident = False, a_vals = A_VALS
                   + 2*(abs(fTT)**2 * bpp2 + abs(fTtT)**2 * b2) * (pK/(mB + mK) * fT)**2)
               ) * limsK
 
-    BKs_rate = (tauB0 * bpsi/(24*np.pi**3) * pKs*qsq/Lambda**4 * 1/a
+    def Ks_rate(A1, V, T1, T2):
+        "K* rate for the given transverse form factors (A1, V, T1, T2); zero them for the longitudinal part."
+        return (tauB0 * bpsi/(24*np.pi**3) * pKs*qsq/Lambda**4 * 1/a
                 * (2*(abs(fVV)**2 * bp2 + abs(fVA)**2 * b2) * (pKs/(mB + mKs) * V)**2
                    + (abs(fAV)**2 * bp2 + abs(fAA)**2 * b2) * (1/2*((mB + mKs)/mB * A1)**2 + 16*(mKs * A12)**2/qsq)
                    + 3/2*(abs(fAA)**2 * omb2 * (mb + ms)**2/qsq 
@@ -220,20 +215,9 @@ def dBdqsq_BKpsipsi(qsq, mpsi, Ci, Lambda = 1, is_ident = False, a_vals = A_VALS
                    - 6*np.real(fAV * np.conjugate(fTtT)) * mpsi*(mB + mKs)/qsq * (delKs * A1*T2
                                                                                   + 16*(mKs/(mB + mKs))**2 * A12*T23))
                ) * limsKs
-    
-    A1, V, T1, T2 = 0, 0, 0, 0
-    BKs_rate_L = (tauB0 * bpsi/(24*np.pi**3) * pKs*qsq/Lambda**4 * 1/a
-                  * (2*(abs(fVV)**2 * bp2 + abs(fVA)**2 * b2) * (pKs/(mB + mKs) * V)**2
-                     + (abs(fAV)**2 * bp2 + abs(fAA)**2 * b2) * (1/2*((mB + mKs)/mB * A1)**2 + 16*(mKs * A12)**2/qsq)
-                     + 3/2*(abs(fAA)**2 * omb2 * (mb + ms)**2/qsq 
-                            + abs(fPS)**2 * b2 + abs(fPP)**2 
-                            - 4*np.real(fAA * np.conjugate(fPP)) * mpsi*(mb + ms)/qsq) * (pKs/(mb + ms) * A0)**2
-                     + 4*((abs(fTT)**2 * bpp2 + abs(fTtT)**2 * b2) * T1
-                          - 6*np.real(fVV * np.conjugate(fTT))* mpsi/(mB + mKs) * V) * pKs**2/qsq * T1
-                     + (abs(fTT)**2 * b2 + abs(fTtT)**2 * bpp2) * ((mB*delKs*T2)**2/qsq + 8*(mKs/(mB + mKs) * T23)**2)
-                     - 6*np.real(fAV * np.conjugate(fTtT)) * mpsi*(mB + mKs)/qsq * (delKs * A1*T2
-                                                                                  + 16*(mKs/(mB + mKs))**2 * A12*T23))
-                 ) * limsKs
+
+    BKs_rate = Ks_rate(A1, V, T1, T2)
+    BKs_rate_L = Ks_rate(0, 0, 0, 0)   # longitudinal K*: transverse form factors set to zero
     
     BKs_rate_T = BKs_rate - BKs_rate_L
     
