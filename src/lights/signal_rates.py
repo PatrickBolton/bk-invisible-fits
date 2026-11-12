@@ -49,6 +49,10 @@ def _is_two_body(model):
     return model is not None and model.two_body
 
 
+# Lowest q^2 of the integration grids: the three-body rates divide by q^2, so q^2 = 0 is avoided
+_QSQ_MIN = 1e-12
+
+
 def _legacy_nrec(fname, args, kwargs):
     "Old call Nrec(SM, mX, cNP, Lambda, is_ident, a_vals, eff_vals) -> (model, include_SM, extra kwargs)."
     vals = from_legacy(
@@ -66,9 +70,28 @@ def _legacy_nrec(fname, args, kwargs):
 _QSQ_MAX_K = (mB - mK) ** 2
 
 
-def _qsqtrue_grid(model, ntrue):
-    "True-q^2 grid from the pair threshold 4 mX^2 to the kinematic endpoint."
-    return np.linspace(min(4 * model.mX**2, _QSQ_MAX_K - 1e-10), _QSQ_MAX_K, ntrue)
+def _smeared_BelleII(kernel, model, include_SM, a_vals, eff_vals, ntrue):
+    """NB * int dq2_true kernel(q2_true) eff(q2_true) dB/dq2_true, for the signal of model (and the SM).
+
+    kernel(q2_true) gives the smearing to each reconstructed q^2 value or bin, shape
+    (n_rec, len(q2_true)). A two-body signal is a delta function at q2_true = mX^2; three-body
+    signals are integrated from the pair threshold 4 mX^2 to the kinematic endpoint.
+    """
+    eff = efficiency(eff_bin_cents, eff_vals, 3)
+    out = 0.0
+
+    if _is_two_body(model):
+        out = out + kernel(model.mX**2)[:, 0] * B_tot(model, a_vals)[K] * eff(model.mX**2)
+
+    if _is_three_body(model):
+        qt = np.linspace(min(max(4 * model.mX**2, _QSQ_MIN), _QSQ_MAX_K - 1e-10), _QSQ_MAX_K, ntrue)
+        out = out + simpson(kernel(qt) * (dBdqsq_tot(qt, model, a_vals)[K] * eff(qt)), x=qt, axis=1)
+
+    if include_SM:
+        qt = np.linspace(_QSQ_MIN, _QSQ_MAX_K, ntrue)
+        out = out + simpson(kernel(qt) * (dBdqsq_SM(qt, a_vals=a_vals)[K] * eff(qt)), x=qt, axis=1)
+
+    return NB * out
 
 
 def dNdqsqrec_BelleII(qsqrec, model=None, *, include_SM=False, a_vals=A_VALS_GRDV, eff_vals=eff_vals, ntrue=1000):
@@ -76,24 +99,9 @@ def dNdqsqrec_BelleII(qsqrec, model=None, *, include_SM=False, a_vals=A_VALS_GRD
 
     qsqrec may be a scalar or an ascending 1D array (evaluated in one vectorised call).
     """
-    scalar = np.ndim(qsqrec) == 0
-    qsqrec = np.atleast_1d(qsqrec)
-    eff = efficiency(eff_bin_cents, eff_vals, 3)
-    dNdqsqrec = np.zeros(len(qsqrec))
-
-    if _is_two_body(model):  # delta function at true q^2 = mX^2
-        dNdqsqrec += sm(qsqrec, model.mX**2)[:, 0] * B_tot(model, a_vals)[K] * eff(model.mX**2)
-
-    if _is_three_body(model):  # integrate the smearing over true q^2
-        qt = _qsqtrue_grid(model, ntrue)
-        dNdqsqrec += simpson(sm(qsqrec, qt) * (dBdqsq_tot(qt, model, a_vals)[K] * eff(qt)), x=qt, axis=1)
-
-    if include_SM:
-        qt = np.linspace(4 * (1e-10) ** 2, _QSQ_MAX_K, ntrue)
-        dNdqsqrec += simpson(sm(qsqrec, qt) * (dBdqsq_SM(qt, a_vals=a_vals)[K] * eff(qt)), x=qt, axis=1)
-
-    dNdqsqrec = NB * dNdqsqrec
-    return dNdqsqrec[0] if scalar else dNdqsqrec
+    q = np.atleast_1d(qsqrec)
+    out = _smeared_BelleII(lambda qt: sm(q, qt), model, include_SM, a_vals, eff_vals, ntrue) + np.zeros(len(q))
+    return out[0] if np.ndim(qsqrec) == 0 else out
 
 
 # Bin-integrated smearing kernel. Swapping the order of integration,
@@ -137,21 +145,7 @@ def Nrec_BelleII(
             model, include_SM=include_SM, **{"a_vals": a_vals, "eff_vals": eff_vals, "ntrue": ntrue, **extra}
         )
 
-    eff = efficiency(eff_bin_cents, eff_vals, 3)
-    Nrec_vals = np.zeros(len(bin_cents))
-
-    if _is_two_body(model):  # delta function at true q^2 = mX^2
-        Nrec_vals += smearing_kernel(model.mX**2)[:, 0] * B_tot(model, a_vals)[K] * eff(model.mX**2)
-
-    if _is_three_body(model):
-        qt = _qsqtrue_grid(model, ntrue)
-        Nrec_vals += simpson(smearing_kernel(qt) * (dBdqsq_tot(qt, model, a_vals)[K] * eff(qt)), x=qt, axis=1)
-
-    if include_SM:
-        qt = np.linspace(4 * (1e-10) ** 2, _QSQ_MAX_K, ntrue)
-        Nrec_vals += simpson(smearing_kernel(qt) * (dBdqsq_SM(qt, a_vals=a_vals)[K] * eff(qt)), x=qt, axis=1)
-
-    return NB * Nrec_vals
+    return _smeared_BelleII(smearing_kernel, model, include_SM, a_vals, eff_vals, ntrue) + np.zeros(len(bin_cents))
 
 
 ### BaBar ###
@@ -181,27 +175,20 @@ def Nrec_BaBar(
             model, include_SM=include_SM, **{"a_vals": a_vals, "eff_vals": eff_vals, "npts": npts, **extra}
         )
 
-    eff = efficiency(eff_bin_cents_BaBar * mB**2, eff_vals, 3)
+    lo, hi = (bin_cents_BaBar - bw_BaBar) * mB**2, (bin_cents_BaBar + bw_BaBar) * mB**2  # bin edges in q^2
+    Nrec_vals = np.zeros(len(bin_cents_BaBar))
 
-    Nrec_vals = []
-    for c in bin_cents_BaBar:
-        lo, hi = c - bw_BaBar, c + bw_BaBar
-        N = 0.0
+    if _is_three_body(model) or include_SM:
+        # npts points in each bin, all bins in one call (avoiding q^2 = 0, where the 3-body rates divide by q^2)
+        qsq = np.linspace(np.maximum(lo, 1e-5 * mB**2), hi, npts, axis=1)  # (Nbins, npts)
+        rate = dNdqsqrec_BaBar(qsq.ravel(), model, include_SM=include_SM, a_vals=a_vals, eff_vals=eff_vals)
+        Nrec_vals += simpson(rate.reshape(qsq.shape), x=qsq, axis=1)
 
-        if _is_three_body(model) or include_SM:
-            # Avoid q^2 = 0 exactly, where the 3-body rates divide by q^2
-            qsq_vals = np.linspace(max(lo, 1e-5), hi, npts) * mB**2
-            N += simpson(
-                dNdqsqrec_BaBar(qsq_vals, model, include_SM=include_SM, a_vals=a_vals, eff_vals=eff_vals), x=qsq_vals
-            )
+    if _is_two_body(model):  # delta function at q^2 = mX^2
+        eff = efficiency(eff_bin_cents_BaBar * mB**2, eff_vals, 3)
+        Nrec_vals += ((lo < model.mX**2) & (model.mX**2 < hi)) * NB_BaBar * B_tot(model, a_vals)[KS] * eff(model.mX**2)
 
-        # Two-body decay: delta function at q^2 = mX^2
-        if _is_two_body(model) and lo * mB**2 < model.mX**2 < hi * mB**2:
-            N += NB_BaBar * B_tot(model, a_vals)[KS] * eff(model.mX**2)
-
-        Nrec_vals.append(N)
-
-    return np.array(Nrec_vals)
+    return Nrec_vals
 
 
 ### Theory uncertainty ###

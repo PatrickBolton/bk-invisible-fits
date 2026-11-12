@@ -74,6 +74,13 @@ def test_two_body_signal_lands_in_its_bin():
     assert s[k] > 0 and np.all(np.delete(s, k) == 0)
 
 
+def test_massless_three_body_signal_is_finite():
+    # The true-q^2 grid starts at the pair threshold 4 mX^2, which must not be q^2 = 0
+    massless = Nrec_BelleII(Model("psipsi", 0.0, Lambda=1e4, CTL=1.0, CTR=-1.0))
+    light = Nrec_BelleII(Model("psipsi", 1e-10, Lambda=1e4, CTL=1.0, CTR=-1.0))
+    assert np.all(np.isfinite(massless)) and massless == pytest.approx(light, rel=1e-6)
+
+
 def test_efficiency_is_never_negative():
     eff = efficiency(np.arange(1.0, 24.0, 2.0), np.r_[np.linspace(0.1, 0.02, 10), 0.0, 0.0], 3)
     assert np.all(eff(np.linspace(0.0, 25.0, 500)) >= 0)

@@ -75,6 +75,9 @@ cov_neutral = np.diag(w_neutral**2)
 
 obs = load(DATA_DIR / "obs_inc.txt")[:Nbins]
 
+# Belle II's published profile likelihood of the SM signal strength (ITA); columns mu, -2 Delta ln L
+ita_profile = np.array(pd.io.json.read_json(DATA_DIR / "ITALikelihoodPoints_PDF.json"))
+
 # Efficiencies
 eff_data = np.array(pd.io.json.read_json(DATA_DIR / "SignalEfficiency.json"))
 effHad_data = np.array(pd.io.json.read_json(DATA_DIR / "SignalEfficiency_HAD.json"))
@@ -150,7 +153,7 @@ asymmetric_error_K0 = np.array(list(zip(obs_BaBar_down_K0, obs_BaBar_up_K0))).T
 eff_bins_BaBar = np.linspace(0, 0.7, 8)
 eff_bin_cents_BaBar = (eff_bins_BaBar[1:] + eff_bins_BaBar[:-1]) / 2
 
-eff_BaBar_K0_data = np.array(pd.io.json.read_json(DATA_DIR / "EfficiencyB0toKs0Babar_PDF.json")) * 8 * 1e-4
+eff_BaBar_K0_data = np.array(pd.io.json.read_json(DATA_DIR / "EfficiencyB0toKs0BaBar_PDF.json")) * 8 * 1e-4
 eff_BaBar_K0_vals = eff_BaBar_K0_data[0]
 eff_BaBar_K0_sigma = (eff_BaBar_K0_data[1] + eff_BaBar_K0_data[2]) / 2
 eff_BaBar_K0_cov = np.diag(eff_BaBar_K0_sigma**2)

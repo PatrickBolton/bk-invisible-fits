@@ -58,7 +58,7 @@ def test_gradients_match_finite_differences(kind):
             NPAR_BelleII + NPAR_BaBar,
         )
     else:
-        f, g, npar = ((lambda y: logLL_LEP(np.array([y[1], y[2], 3e-5, 1e-4]))), (lambda y: grad_LEP(y, 3e-5, 1e-4)), 2)
+        f, g, npar = ((lambda y: logLL_LEP(y, 3e-5, 1e-4)), (lambda y: grad_LEP(y, 3e-5, 1e-4)), 2)
     x = np.concatenate(([1.3, 0.7, -0.4], 0.05 * rng.normal(size=npar)))
     gn = finite_difference(f, x)
     assert np.max(np.abs(g(x) - gn) / (1 + np.abs(gn))) < 1e-4
@@ -86,6 +86,9 @@ def test_SM_fit_regression():
     _, _, m, _ = fit  # also unpacks as a tuple
     assert reduced_chisq(m, obs) == pytest.approx(1.981, abs=0.01)
     assert profile_logLL_SM(logLL_BelleII, 0.0) == pytest.approx(10.37, abs=0.02)
+    profile = profile_logLL_SM(logLL_BelleII, [0.0, fit.value])  # an array of mu in one call
+    assert profile.shape == (2,)
+    assert profile == pytest.approx([10.37, 0.0], abs=0.02)
 
 
 def test_NP_fit_regression():

@@ -13,7 +13,7 @@ from lights.load_data import (
     NinormB0Ks0,
     b_BaBar_comb_K0,
     b_BaBar_K0,
-    b_BaBar_K0_invcov,
+    b_BaBar_K0_sigma,
     b_BaBar_peak_K0,
     b_charged,
     b_cont,
@@ -40,8 +40,6 @@ from lights.signal_rates import (
 
 kwd = {"fastmath": {"reassoc", "contract", "arcp"}}
 
-CNP_zero = np.zeros((6, 14))
-
 
 def _relative(s, J):
     "Relative response R = J / s of a template (zero where the template is zero)."
@@ -53,12 +51,6 @@ def _relative(s, J):
 # Relative responses of the SM templates to the input nuisance params.
 R_SM_BelleII = _relative(s_SM_BelleII, J_SM_BelleII)
 R_SM_BaBar = _relative(s_SM_BaBar, J_SM_BaBar)
-
-
-@nb.njit(**kwd)
-def sigdot(x, y):
-    "Useful function entering gaussian log likelihoods."
-    return x @ y @ x
 
 
 # Parameter layout
@@ -77,6 +69,43 @@ def sigdot(x, y):
 # so the nuisances cannot cancel a large signal. Because the same
 # u enter the SM and NP templates, their theory uncertainties are correctly correlated, and
 # no covariance matrix is ever inverted.
+#
+# Each experiment has one _model_* function that evaluates its signal and background
+# components; the expected events, the gradient and components_* are all built from it.
+
+
+@nb.njit(**kwd)
+def _signals(s_SM, R_SM, s_NP_1, s_NP_2, R_NP_1, R_NP_2, u):
+    "Signal templates (SM, NP 1, NP 2) at the input nuisance params u."
+    return s_SM * np.exp(R_SM @ u), s_NP_1 * np.exp(R_NP_1 @ u), s_NP_2 * np.exp(R_NP_2 @ u)
+
+
+@nb.njit(**kwd)
+def _mix(c, rows):
+    "c[0] rows[0] + c[1] rows[1] + c[2] rows[2], for three coefficients and three arrays."
+    return c[0] * rows[0] + c[1] * rows[1] + c[2] * rows[2]
+
+
+@nb.njit(**kwd)
+def _exp_BelleII(mu, sig, bkg, mu_bkg):
+    "Expected Belle II events from the components of _model_BelleII."
+    return _mix(mu, sig) + _mix((1 + mu_bkg[0], 1 + mu_bkg[1], 1 + mu_bkg[2]), bkg)
+
+
+@nb.njit(**kwd)
+def _poisson(exp, obs):
+    "-2 ln of the Poisson likelihood of obs given exp, summed over bins (constant terms dropped)."
+    return 2 * np.sum(exp - obs * np.log(exp))
+
+
+@nb.njit(**kwd)
+def _chain(x, d_mu, d_p):
+    "Gradient w.r.t. x from the one w.r.t. the signal strengths (mu_SM, x1^2, x2^2) and the nuisance params."
+    out = np.empty(3 + len(d_p))
+    out[0], out[1], out[2] = d_mu[0], 2 * x[1] * d_mu[1], 2 * x[2] * d_mu[2]
+    out[3:] = d_p
+    return out
+
 
 # Belle II ITA
 # Nuisance block p (length NPAR_BelleII), with U = NU_BelleII:
@@ -86,299 +115,211 @@ def sigdot(x, y):
 #   p[U+2N:U+3N]      z_neutral
 #   p[U+3N:U+3N+3]    mu_cont, mu_charged, mu_neutral   background normalisation params.
 NPAR_BelleII = NU_BelleII + 3 * Nbins + 3
+BKG_NAMES_BelleII = ("cont", "charged", "neutral")
 
 # Relative uncertainty of each Belle II background normalisation (mu_cont, mu_charged, mu_neutral)
 BKG_NORM_SIGMA = 0.02
 
+_w_BelleII = (w_cont, w_charged, w_neutral)  # MC uncertainties, in the order of BKG_NAMES_BelleII
+
 
 @nb.njit(**kwd)
-def _exp_BelleII(mu_SM, mu_NP_1, mu_NP_2, s_NP_1, s_NP_2, R_NP_1, R_NP_2, p):
-    "Expected number of Belle II ITA events in each bin."
-    N, U = Nbins, NU_BelleII
-    u = p[0:U]
-    z_cont, z_charged, z_neutral = p[U : U + N], p[U + N : U + 2 * N], p[U + 2 * N : U + 3 * N]
-    mu_cont, mu_charged, mu_neutral = p[U + 3 * N], p[U + 3 * N + 1], p[U + 3 * N + 2]
+def _model_BelleII(p, s_NP_1, s_NP_2, R_NP_1, R_NP_2):
+    """Belle II components at the nuisance block p.
 
-    return (
-        mu_SM * s_SM_BelleII * np.exp(R_SM_BelleII @ u)
-        + mu_NP_1 * s_NP_1 * np.exp(R_NP_1 @ u)
-        + mu_NP_2 * s_NP_2 * np.exp(R_NP_2 @ u)
-        + (1 + mu_cont) * (b_cont + w_cont * z_cont)
-        + (1 + mu_charged) * (b_charged + w_charged * z_charged)
-        + (1 + mu_neutral) * (b_neutral + w_neutral * z_neutral)
+    Returns the signals (SM, NP 1, NP 2) at unit strength; the backgrounds (cont, charged,
+    neutral) before normalisation, b + w z; and their normalisation params mu_bkg.
+    The expected events are sum_i mu_i sig_i + sum_k (1 + mu_bkg_k) bkg_k.
+    """
+    N, U = Nbins, NU_BelleII
+    sig = _signals(s_SM_BelleII, R_SM_BelleII, s_NP_1, s_NP_2, R_NP_1, R_NP_2, p[0:U])
+    bkg = (
+        b_cont + w_cont * p[U : U + N],
+        b_charged + w_charged * p[U + N : U + 2 * N],
+        b_neutral + w_neutral * p[U + 2 * N : U + 3 * N],
     )
+    return sig, bkg, (p[U + 3 * N], p[U + 3 * N + 1], p[U + 3 * N + 2])
 
 
 @nb.njit(**kwd)
-def _penalty_BelleII(p):
-    "Gaussian constraint terms for the Belle II nuisance parameters."
+def _nll_BelleII(mu, p, s_NP_1, s_NP_2, R_NP_1, R_NP_2):
+    "-2 ln L of Belle II for signal strengths mu = (mu_SM, mu_NP_1, mu_NP_2) and nuisance block p."
+    U = NU_BelleII
+    sig, bkg, mu_bkg = _model_BelleII(p, s_NP_1, s_NP_2, R_NP_1, R_NP_2)
+    exp = _exp_BelleII(mu, sig, bkg, mu_bkg)
+    u, z = p[0:U], p[U : NPAR_BelleII - 3]
+    return _poisson(exp, obs) + u @ u + z @ z + (mu_bkg[0] ** 2 + mu_bkg[1] ** 2 + mu_bkg[2] ** 2) / BKG_NORM_SIGMA**2
+
+
+@nb.njit(**kwd)
+def _nll_grad_BelleII(mu, p, s_NP_1, s_NP_2, R_NP_1, R_NP_2):
+    """Gradient of _nll_BelleII w.r.t. mu and p.
+
+    With f = 2 sum(e - o ln e) + penalties, df/de = 2 (1 - o/e); the chain rule through e
+    gives the rest. Checked against finite differences in scripts/check_gradients.py.
+    """
     N, U = Nbins, NU_BelleII
-    u, z = p[0:U], p[U : U + 3 * N]
-    mu_cont, mu_charged, mu_neutral = p[U + 3 * N], p[U + 3 * N + 1], p[U + 3 * N + 2]
+    sig, bkg, mu_bkg = _model_BelleII(p, s_NP_1, s_NP_2, R_NP_1, R_NP_2)
+    g = 2 * (1 - obs / _exp_BelleII(mu, sig, bkg, mu_bkg))
 
-    sigma = BKG_NORM_SIGMA
-    normgauss = (mu_cont / sigma) ** 2 + (mu_charged / sigma) ** 2 + (mu_neutral / sigma) ** 2
-
-    return u @ u + z @ z + normgauss
-
-
-@nb.njit(**kwd)
-def Nevents_BelleII(x, s_NP_1, s_NP_2, R_NP_1, R_NP_2):
-    "Expected number of Belle II ITA events: SM plus NP B+ -> K+ invisible signal and backgrounds."
-    return _exp_BelleII(x[0], x[1] ** 2, x[2] ** 2, s_NP_1, s_NP_2, R_NP_1, R_NP_2, x[3:])
-
-
-@nb.njit(**kwd)
-def logLL_BelleII(x, s_NP_1, s_NP_2, R_NP_1, R_NP_2):
-    "-2 times the log likelihood (minus constant factors) for the Belle II inclusive tag."
-    exp = Nevents_BelleII(x, s_NP_1, s_NP_2, R_NP_1, R_NP_2)
-    pois = 2 * np.sum(exp - obs * np.log(exp))  # Poisson (exp, obs) over bins
-    return pois + _penalty_BelleII(x[3:])
+    d_p = np.empty(NPAR_BelleII)
+    d_p[0:U] = (
+        R_SM_BelleII.T @ (g * mu[0] * sig[0]) + R_NP_1.T @ (g * mu[1] * sig[1]) + R_NP_2.T @ (g * mu[2] * sig[2])
+    ) + 2 * p[0:U]
+    for k in range(3):
+        d_p[U + k * N : U + (k + 1) * N] = g * (1 + mu_bkg[k]) * _w_BelleII[k] + 2 * p[U + k * N : U + (k + 1) * N]
+        d_p[U + 3 * N + k] = g @ bkg[k] + 2 * mu_bkg[k] / BKG_NORM_SIGMA**2
+    return np.array((sig[0] @ g, sig[1] @ g, sig[2] @ g)), d_p
 
 
 # BaBar
 # Nuisance block p (length NPAR_BaBar), with U = NU_BaBar:
 #   p[0:U]          u           input nuisance params. (B -> K* form factors, efficiencies)
 #   p[U:U+Nb]       th_bkg      statistical background (MC) nuisance params.
-#   p[U+Nb]         recB0Ks0    reconstruction nuisance param.
-#   p[U+Nb+1]       NiBvar      NiB nuisance param.
-#   p[U+Nb+2]       NinormB0Ks0var   background normalisation nuisance param.
+#   p[U+Nb]         rec         reconstruction nuisance param. (sigma sigrecB0Ks0)
+#   p[U+Nb+1]       NiB         peaking background nuisance param. (sigma NiBs)
+#   p[U+Nb+2]       Nnorm       background normalisation nuisance param. (sigma NinormB0Ks0)
 NPAR_BaBar = NU_BaBar + Nbins_BaBar + 3
 
+# Gaussian weight of the relative background shifts th_bkg: (b / sigma_b)^2
+_mc_weight_BaBar = (b_BaBar_K0 / b_BaBar_K0_sigma) ** 2
+
 
 @nb.njit(**kwd)
-def _exp_BaBar(mu_SM, mu_NP_1, mu_NP_2, s_NP_1, s_NP_2, R_NP_1, R_NP_2, p):
-    "Expected number of BaBar B0 -> K*0 invisible events in each bin."
+def _model_BaBar(p, s_NP_1, s_NP_2, R_NP_1, R_NP_2):
+    """BaBar components at the nuisance block p.
+
+    Returns the signals (SM, NP 1, NP 2) at unit strength; the background
+    shape (1 + rec)(1 + NiB) b_peak + b_comb before the shifts (1 + Nnorm)(1 + th_bkg); and
+    the nuisance params th_bkg, rec, NiB, Nnorm. The expected events are
+    (1 + rec) sum_i mu_i sig_i + (1 + Nnorm)(1 + th_bkg) bkg.
+    """
     N, U = Nbins_BaBar, NU_BaBar
-    u, th_bkg = p[0:U], p[U : U + N]
-    recB0Ks0, NiBvar, NinormB0Ks0var = p[U + N], p[U + N + 1], p[U + N + 2]
-
-    signal = (
-        mu_SM * s_SM_BaBar * np.exp(R_SM_BaBar @ u)
-        + mu_NP_1 * s_NP_1 * np.exp(R_NP_1 @ u)
-        + mu_NP_2 * s_NP_2 * np.exp(R_NP_2 @ u)
-    )
-    return (1 + recB0Ks0) * signal + (1 + NinormB0Ks0var) * (1 + th_bkg) * (
-        (1 + recB0Ks0) * (1 + NiBvar) * b_BaBar_peak_K0 + b_BaBar_comb_K0
-    )
+    sig = _signals(s_SM_BaBar, R_SM_BaBar, s_NP_1, s_NP_2, R_NP_1, R_NP_2, p[0:U])
+    th, rec, NiB, Nnorm = p[U : U + N], p[U + N], p[U + N + 1], p[U + N + 2]
+    bkg = (1 + rec) * (1 + NiB) * b_BaBar_peak_K0 + b_BaBar_comb_K0
+    return sig, bkg, th, rec, NiB, Nnorm
 
 
 @nb.njit(**kwd)
-def _penalty_BaBar(p):
-    "Gaussian constraint terms for the BaBar nuisance parameters."
+def _nll_BaBar(mu, p, s_NP_1, s_NP_2, R_NP_1, R_NP_2):
+    "-2 ln L of BaBar for signal strengths mu = (mu_SM, mu_NP_1, mu_NP_2) and nuisance block p."
+    sig, bkg, th, rec, NiB, Nnorm = _model_BaBar(p, s_NP_1, s_NP_2, R_NP_1, R_NP_2)
+    exp = (1 + rec) * _mix(mu, sig) + (1 + Nnorm) * (1 + th) * bkg
+    u = p[0:NU_BaBar]
+    penalty = u @ u + th @ (_mc_weight_BaBar * th)
+    penalty += (rec / sigrecB0Ks0) ** 2 + (NiB / NiBs) ** 2 + (Nnorm / NinormB0Ks0) ** 2
+    return _poisson(exp, obs_BaBar_K0) + penalty
+
+
+@nb.njit(**kwd)
+def _nll_grad_BaBar(mu, p, s_NP_1, s_NP_2, R_NP_1, R_NP_2):
+    "Gradient of _nll_BaBar w.r.t. mu and p (see _nll_grad_BelleII)."
     N, U = Nbins_BaBar, NU_BaBar
-    u, th_bkg = p[0:U], p[U : U + N]
-    recB0Ks0, NiBvar, NinormB0Ks0var = p[U + N], p[U + N + 1], p[U + N + 2]
+    sig, bkg, th, rec, NiB, Nnorm = _model_BaBar(p, s_NP_1, s_NP_2, R_NP_1, R_NP_2)
+    signal = _mix(mu, sig)
+    shift = (1 + Nnorm) * (1 + th)
+    g = 2 * (1 - obs_BaBar_K0 / ((1 + rec) * signal + shift * bkg))
 
-    MCgauss = sigdot(th_bkg * b_BaBar_K0, b_BaBar_K0_invcov)
-    normgauss = (recB0Ks0 / sigrecB0Ks0) ** 2 + (NiBvar / NiBs) ** 2 + (NinormB0Ks0var / NinormB0Ks0) ** 2
+    d_p = np.empty(NPAR_BaBar)
+    d_p[0:U] = (1 + rec) * (
+        R_SM_BaBar.T @ (g * mu[0] * sig[0]) + R_NP_1.T @ (g * mu[1] * sig[1]) + R_NP_2.T @ (g * mu[2] * sig[2])
+    ) + 2 * p[0:U]
+    d_p[U : U + N] = g * (1 + Nnorm) * bkg + 2 * _mc_weight_BaBar * th
+    d_p[U + N] = g @ signal + g @ (shift * (1 + NiB) * b_BaBar_peak_K0) + 2 * rec / sigrecB0Ks0**2
+    d_p[U + N + 1] = g @ (shift * (1 + rec) * b_BaBar_peak_K0) + 2 * NiB / NiBs**2
+    d_p[U + N + 2] = g @ ((1 + th) * bkg) + 2 * Nnorm / NinormB0Ks0**2
+    return (1 + rec) * np.array((sig[0] @ g, sig[1] @ g, sig[2] @ g)), d_p
 
-    return u @ u + MCgauss + normgauss
+
+# Public likelihoods and gradients of the parameter vector x
+@nb.njit(**kwd)
+def _strengths(x):
+    "Signal strengths (mu_SM, mu_NP_1, mu_NP_2) = (x0, x1^2, x2^2)."
+    return x[0], x[1] ** 2, x[2] ** 2
 
 
 @nb.njit(**kwd)
-def Nevents_BaBar(x, s_NP_1, s_NP_2, R_NP_1, R_NP_2):
-    "Expected number of BaBar events: SM plus NP B0 -> K*0 invisible signal and backgrounds."
-    return _exp_BaBar(x[0], x[1] ** 2, x[2] ** 2, s_NP_1, s_NP_2, R_NP_1, R_NP_2, x[3:])
+def logLL_BelleII(x, s_NP_1, s_NP_2, R_NP_1, R_NP_2):
+    "-2 times the log likelihood (minus constant factors) for the Belle II inclusive tag."
+    return _nll_BelleII(_strengths(x), x[3:], s_NP_1, s_NP_2, R_NP_1, R_NP_2)
 
 
 @nb.njit(**kwd)
 def logLL_BaBar(x, s_NP_1, s_NP_2, R_NP_1, R_NP_2):
     "-2 times the log likelihood (minus constant factors) for BaBar."
-    exp = Nevents_BaBar(x, s_NP_1, s_NP_2, R_NP_1, R_NP_2)
-    pois = 2 * np.sum(exp - obs_BaBar_K0 * np.log(exp))  # Poisson (exp, obs) over bins
-    return pois + _penalty_BaBar(x[3:])
+    return _nll_BaBar(_strengths(x), x[3:], s_NP_1, s_NP_2, R_NP_1, R_NP_2)
 
 
-# LEP (Bs -> inv)
+# Combined: x[0:3] as above, then the Belle II nuisance block, then the BaBar nuisance block.
+# The Belle II and BaBar inputs (B -> K vs B -> K* form factors, separate efficiencies) are
+# independent, so the two blocks share no parameters apart from mu_SM and the NP couplings.
+# Templates: the four Belle II ones, then the four BaBar ones.
+_PB = 3 + NPAR_BelleII  # start of the BaBar block in the combined x
+
+
+@nb.njit(**kwd)
+def logLL_Combined(x, s1_B, s2_B, R1_B, R2_B, s1_b, s2_b, R1_b, R2_b):
+    "-2 times the log likelihood (minus constant factors) for combined experiments."
+    mu = _strengths(x)
+    return _nll_BelleII(mu, x[3:_PB], s1_B, s2_B, R1_B, R2_B) + _nll_BaBar(mu, x[_PB:], s1_b, s2_b, R1_b, R2_b)
+
+
+@nb.njit(**kwd)
+def grad_BelleII(x, s_NP_1, s_NP_2, R_NP_1, R_NP_2):
+    "Gradient of logLL_BelleII w.r.t. x."
+    return _chain(x, *_nll_grad_BelleII(_strengths(x), x[3:], s_NP_1, s_NP_2, R_NP_1, R_NP_2))
+
+
+@nb.njit(**kwd)
+def grad_BaBar(x, s_NP_1, s_NP_2, R_NP_1, R_NP_2):
+    "Gradient of logLL_BaBar w.r.t. x."
+    return _chain(x, *_nll_grad_BaBar(_strengths(x), x[3:], s_NP_1, s_NP_2, R_NP_1, R_NP_2))
+
+
+@nb.njit(**kwd)
+def grad_Combined(x, s1_B, s2_B, R1_B, R2_B, s1_b, s2_b, R1_b, R2_b):
+    "Gradient of logLL_Combined w.r.t. x."
+    mu = _strengths(x)
+    d_mu_B, d_p_B = _nll_grad_BelleII(mu, x[3:_PB], s1_B, s2_B, R1_B, R2_B)
+    d_mu_b, d_p_b = _nll_grad_BaBar(mu, x[_PB:], s1_b, s2_b, R1_b, R2_b)
+    return _chain(x, d_mu_B + d_mu_b, np.concatenate((d_p_B, d_p_b)))
+
+
+@nb.njit(**kwd)
+def Nevents_BelleII(x, s_NP_1, s_NP_2, R_NP_1, R_NP_2):
+    "Expected number of Belle II ITA events: SM plus NP B+ -> K+ invisible signal and backgrounds."
+    sig, bkg, mu_bkg = _model_BelleII(x[3:], s_NP_1, s_NP_2, R_NP_1, R_NP_2)
+    return _exp_BelleII(_strengths(x), sig, bkg, mu_bkg)
+
+
+@nb.njit(**kwd)
+def Nevents_BaBar(x, s_NP_1, s_NP_2, R_NP_1, R_NP_2):
+    "Expected number of BaBar events: SM plus NP B0 -> K*0 invisible signal and backgrounds."
+    sig, bkg, th, rec, _, Nnorm = _model_BaBar(x[3:], s_NP_1, s_NP_2, R_NP_1, R_NP_2)
+    return (1 + rec) * _mix(_strengths(x), sig) + (1 + Nnorm) * (1 + th) * bkg
+
+
+# LEP (Bs -> inv): Gaussian in the number of events N_norm * B(Bs -> inv)
 LEP_N_norm = 6607.14
 LEP_mu = 0.525241
 LEP_sigma = 2.47728
 
 
 @nb.njit(**kwd)
-def logLL_LEP(x):
-    "-2 times the log likelihood (minus constant factors) for LEP."
+def logLL_LEP(x, Br_LEP_1, Br_LEP_2):
+    """-2 times the log likelihood (minus constant factors) for LEP.
 
-    mu_NP_1 = (x[0]) ** 2  # NP signal 1 strength
-    mu_NP_2 = (x[1]) ** 2  # NP signal 2 strength
-
-    Br_LEP_1 = x[2]
-    Br_LEP_2 = x[3]
-
-    Br_LEP = mu_NP_1 * Br_LEP_1 + mu_NP_2 * Br_LEP_2
-
-    # N_norm = 6296.296296296295
-    # mu_LEP = -0.12751
-    # sigma_LEP = 2.75253
-
-    N_norm, mu_LEP, sigma_LEP = LEP_N_norm, LEP_mu, LEP_sigma
-
-    # LL_LEP = ((N_norm*Br_LEP)/sigma_LEP)**2 - 2*(N_norm*Br_LEP)*mu_LEP/sigma_LEP**2
-
-    LL_LEP = (N_norm * Br_LEP - mu_LEP) ** 2 / sigma_LEP**2
-
-    return LL_LEP
-
-
-# Combined Likelihoods
-# Layout: x[0:3] as above, then the Belle II nuisance block, then the BaBar nuisance block.
-# The Belle II and BaBar inputs (B -> K vs B -> K* form factors, separate efficiencies) are
-# independent, so the two blocks share no parameters apart from mu_SM and the NP couplings.
-@nb.njit(**kwd)
-def logLL_Combined(
-    x,
-    s_NP_1_BelleII,
-    s_NP_2_BelleII,
-    R_NP_1_BelleII,
-    R_NP_2_BelleII,
-    s_NP_1_BaBar,
-    s_NP_2_BaBar,
-    R_NP_1_BaBar,
-    R_NP_2_BaBar,
-):
-    "-2 times the log likelihood (minus constant factors) for combined experiments."
-    mu_SM, mu_NP_1, mu_NP_2 = x[0], x[1] ** 2, x[2] ** 2
-    pB = 3  # start of Belle II nuisance block
-    pb = 3 + NPAR_BelleII  # start of BaBar nuisance block
-
-    exp_BelleII = _exp_BelleII(
-        mu_SM, mu_NP_1, mu_NP_2, s_NP_1_BelleII, s_NP_2_BelleII, R_NP_1_BelleII, R_NP_2_BelleII, x[pB:pb]
-    )
-    exp_BaBar = _exp_BaBar(mu_SM, mu_NP_1, mu_NP_2, s_NP_1_BaBar, s_NP_2_BaBar, R_NP_1_BaBar, R_NP_2_BaBar, x[pb:])
-
-    return (
-        2 * np.sum(exp_BelleII - obs * np.log(exp_BelleII))
-        + _penalty_BelleII(x[pB:pb])
-        + 2 * np.sum(exp_BaBar - obs_BaBar_K0 * np.log(exp_BaBar))
-        + _penalty_BaBar(x[pb:])
-    )
-
-
-# Analytic gradients
-# -------------------
-# Migrad otherwise estimates the gradient numerically, costing two likelihood calls per free
-# parameter per step. With f = 2 sum(e - o ln e) + penalties, df/de = 2 (1 - o/e), and the
-# chain rule through e gives the gradient below. Checked against finite differences in
-# scripts/check_gradients.py.
-
-
-@nb.njit(**kwd)
-def _grad_BelleII(mu_SM, mu_NP_1, mu_NP_2, s_NP_1, s_NP_2, R_NP_1, R_NP_2, p):
-    """Gradient of the Belle II -2 ln L w.r.t. (mu_SM, mu_NP_1, mu_NP_2) and the nuisance block p."""
-    N, U = Nbins, NU_BelleII
-    u = p[0:U]
-    z_cont, z_charged, z_neutral = p[U : U + N], p[U + N : U + 2 * N], p[U + 2 * N : U + 3 * N]
-    mu_cont, mu_charged, mu_neutral = p[U + 3 * N], p[U + 3 * N + 1], p[U + 3 * N + 2]
-
-    a0 = s_SM_BelleII * np.exp(R_SM_BelleII @ u)
-    a1 = s_NP_1 * np.exp(R_NP_1 @ u)
-    a2 = s_NP_2 * np.exp(R_NP_2 @ u)
-    B_cont = b_cont + w_cont * z_cont
-    B_charged = b_charged + w_charged * z_charged
-    B_neutral = b_neutral + w_neutral * z_neutral
-    e = (
-        mu_SM * a0
-        + mu_NP_1 * a1
-        + mu_NP_2 * a2
-        + (1 + mu_cont) * B_cont
-        + (1 + mu_charged) * B_charged
-        + (1 + mu_neutral) * B_neutral
-    )
-    g = 2 * (1 - obs / e)
-
-    dp = np.zeros(NPAR_BelleII)
-    dp[0:U] = R_SM_BelleII.T @ (g * mu_SM * a0) + R_NP_1.T @ (g * mu_NP_1 * a1) + R_NP_2.T @ (g * mu_NP_2 * a2) + 2 * u
-    dp[U : U + N] = g * (1 + mu_cont) * w_cont + 2 * z_cont
-    dp[U + N : U + 2 * N] = g * (1 + mu_charged) * w_charged + 2 * z_charged
-    dp[U + 2 * N : U + 3 * N] = g * (1 + mu_neutral) * w_neutral + 2 * z_neutral
-    sigma = BKG_NORM_SIGMA
-    dp[U + 3 * N] = g @ B_cont + 2 * mu_cont / sigma**2
-    dp[U + 3 * N + 1] = g @ B_charged + 2 * mu_charged / sigma**2
-    dp[U + 3 * N + 2] = g @ B_neutral + 2 * mu_neutral / sigma**2
-
-    return g @ a0, g @ a1, g @ a2, dp
-
-
-@nb.njit(**kwd)
-def _grad_BaBar(mu_SM, mu_NP_1, mu_NP_2, s_NP_1, s_NP_2, R_NP_1, R_NP_2, p):
-    """Gradient of the BaBar -2 ln L w.r.t. (mu_SM, mu_NP_1, mu_NP_2) and the nuisance block p."""
-    N, U = Nbins_BaBar, NU_BaBar
-    u, th_bkg = p[0:U], p[U : U + N]
-    rec, NiB, Nnorm = p[U + N], p[U + N + 1], p[U + N + 2]
-
-    a0 = s_SM_BaBar * np.exp(R_SM_BaBar @ u)
-    a1 = s_NP_1 * np.exp(R_NP_1 @ u)
-    a2 = s_NP_2 * np.exp(R_NP_2 @ u)
-    signal = mu_SM * a0 + mu_NP_1 * a1 + mu_NP_2 * a2
-    peak = (1 + rec) * (1 + NiB) * b_BaBar_peak_K0
-    bkg_shape = peak + b_BaBar_comb_K0
-    e = (1 + rec) * signal + (1 + Nnorm) * (1 + th_bkg) * bkg_shape
-    g = 2 * (1 - obs_BaBar_K0 / e)
-
-    dp = np.zeros(NPAR_BaBar)
-    dp[0:U] = (1 + rec) * (
-        R_SM_BaBar.T @ (g * mu_SM * a0) + R_NP_1.T @ (g * mu_NP_1 * a1) + R_NP_2.T @ (g * mu_NP_2 * a2)
-    ) + 2 * u
-    tb = th_bkg * b_BaBar_K0
-    dp[U : U + N] = g * (1 + Nnorm) * bkg_shape + 2 * b_BaBar_K0 * (b_BaBar_K0_invcov @ tb)
-    dp[U + N] = g @ signal + g @ ((1 + Nnorm) * (1 + th_bkg) * (1 + NiB) * b_BaBar_peak_K0) + 2 * rec / sigrecB0Ks0**2
-    dp[U + N + 1] = g @ ((1 + Nnorm) * (1 + th_bkg) * (1 + rec) * b_BaBar_peak_K0) + 2 * NiB / NiBs**2
-    dp[U + N + 2] = g @ ((1 + th_bkg) * bkg_shape) + 2 * Nnorm / NinormB0Ks0**2
-
-    return (1 + rec) * (g @ a0), (1 + rec) * (g @ a1), (1 + rec) * (g @ a2), dp
-
-
-@nb.njit(**kwd)
-def grad_BelleII(x, s_NP_1, s_NP_2, R_NP_1, R_NP_2):
-    "Gradient of logLL_BelleII w.r.t. x."
-    d0, d1, d2, dp = _grad_BelleII(x[0], x[1] ** 2, x[2] ** 2, s_NP_1, s_NP_2, R_NP_1, R_NP_2, x[3:])
-    out = np.zeros(len(x))
-    out[0], out[1], out[2] = d0, 2 * x[1] * d1, 2 * x[2] * d2
-    out[3 : 3 + NPAR_BelleII] = dp
-    return out
-
-
-@nb.njit(**kwd)
-def grad_BaBar(x, s_NP_1, s_NP_2, R_NP_1, R_NP_2):
-    "Gradient of logLL_BaBar w.r.t. x."
-    d0, d1, d2, dp = _grad_BaBar(x[0], x[1] ** 2, x[2] ** 2, s_NP_1, s_NP_2, R_NP_1, R_NP_2, x[3:])
-    out = np.zeros(len(x))
-    out[0], out[1], out[2] = d0, 2 * x[1] * d1, 2 * x[2] * d2
-    out[3 : 3 + NPAR_BaBar] = dp
-    return out
-
-
-@nb.njit(**kwd)
-def grad_Combined(
-    x,
-    s_NP_1_BelleII,
-    s_NP_2_BelleII,
-    R_NP_1_BelleII,
-    R_NP_2_BelleII,
-    s_NP_1_BaBar,
-    s_NP_2_BaBar,
-    R_NP_1_BaBar,
-    R_NP_2_BaBar,
-):
-    "Gradient of logLL_Combined w.r.t. x."
-    pB = 3
-    pb = 3 + NPAR_BelleII
-    m0, m1, m2 = x[0], x[1] ** 2, x[2] ** 2
-    B0, B1, B2, dpB = _grad_BelleII(
-        m0, m1, m2, s_NP_1_BelleII, s_NP_2_BelleII, R_NP_1_BelleII, R_NP_2_BelleII, x[pB:pb]
-    )
-    b0, b1, b2, dpb = _grad_BaBar(m0, m1, m2, s_NP_1_BaBar, s_NP_2_BaBar, R_NP_1_BaBar, R_NP_2_BaBar, x[pb:])
-    out = np.zeros(len(x))
-    out[0], out[1], out[2] = B0 + b0, 2 * x[1] * (B1 + b1), 2 * x[2] * (B2 + b2)
-    out[pB:pb] = dpB
-    out[pb : pb + NPAR_BaBar] = dpb
-    return out
+    x is a parameter vector as above (only the couplings x[1], x[2] enter); Br_LEP_1/2 are
+    the Bs -> invisible branching fractions of the two NP models at unit coupling.
+    """
+    Br = x[1] ** 2 * Br_LEP_1 + x[2] ** 2 * Br_LEP_2
+    return (LEP_N_norm * Br - LEP_mu) ** 2 / LEP_sigma**2
 
 
 @nb.njit(**kwd)
 def grad_LEP(x, Br_LEP_1, Br_LEP_2):
-    "Gradient of the LEP term logLL_LEP([x1, x2, Br_LEP_1, Br_LEP_2]) w.r.t. the full x."
+    "Gradient of logLL_LEP w.r.t. x."
     Br = x[1] ** 2 * Br_LEP_1 + x[2] ** 2 * Br_LEP_2
     c = 2 * (LEP_N_norm * Br - LEP_mu) / LEP_sigma**2 * LEP_N_norm
     out = np.zeros(len(x))
@@ -390,37 +331,26 @@ def grad_LEP(x, Br_LEP_1, Br_LEP_2):
 # Fitted components (for plotting)
 def components_BelleII(x, s_NP_1=None, s_NP_2=None, R_NP_1=None, R_NP_2=None):
     "Fitted Belle II signal and background components in each bin, from a parameter vector x."
-    N, U = Nbins, NU_BelleII
-    s_NP_1, s_NP_2, R_NP_1, R_NP_2 = _fill_zero("BelleII", s_NP_1, s_NP_2, R_NP_1, R_NP_2)
     x = np.asarray(x, dtype=float)
-    p = x[3:]
-    u = p[0:U]
-    z_cont, z_charged, z_neutral = p[U : U + N], p[U + N : U + 2 * N], p[U + 2 * N : U + 3 * N]
-    mu_cont, mu_charged, mu_neutral = p[U + 3 * N : U + 3 * N + 3]
-    return {
-        "SM": x[0] * s_SM_BelleII * np.exp(R_SM_BelleII @ u),
-        "NP_1": x[1] ** 2 * s_NP_1 * np.exp(R_NP_1 @ u),
-        "NP_2": x[2] ** 2 * s_NP_2 * np.exp(R_NP_2 @ u),
-        "cont": (1 + mu_cont) * (b_cont + w_cont * z_cont),
-        "charged": (1 + mu_charged) * (b_charged + w_charged * z_charged),
-        "neutral": (1 + mu_neutral) * (b_neutral + w_neutral * z_neutral),
-    }
+    sig, bkg, mu_bkg = _model_BelleII(x[3:], *_fill_zero("BelleII", s_NP_1, s_NP_2, R_NP_1, R_NP_2))
+    mu = _strengths(x)
+    out = {"SM": mu[0] * sig[0], "NP_1": mu[1] * sig[1], "NP_2": mu[2] * sig[2]}
+    out.update({name: (1 + mu_bkg[k]) * bkg[k] for k, name in enumerate(BKG_NAMES_BelleII)})
+    return out
 
 
 def components_BaBar(x, s_NP_1=None, s_NP_2=None, R_NP_1=None, R_NP_2=None):
     "Fitted BaBar signal and background components in each bin, from a parameter vector x."
-    N, U = Nbins_BaBar, NU_BaBar
-    s_NP_1, s_NP_2, R_NP_1, R_NP_2 = _fill_zero("BaBar", s_NP_1, s_NP_2, R_NP_1, R_NP_2)
     x = np.asarray(x, dtype=float)
-    p = x[3:]
-    u, th_bkg = p[0:U], p[U : U + N]
-    rec, NiB, Ninorm = p[U + N : U + N + 3]
+    sig, _, th, rec, NiB, Nnorm = _model_BaBar(x[3:], *_fill_zero("BaBar", s_NP_1, s_NP_2, R_NP_1, R_NP_2))
+    mu = _strengths(x)
+    shift = (1 + Nnorm) * (1 + th)
     return {
-        "SM": (1 + rec) * x[0] * s_SM_BaBar * np.exp(R_SM_BaBar @ u),
-        "NP_1": (1 + rec) * x[1] ** 2 * s_NP_1 * np.exp(R_NP_1 @ u),
-        "NP_2": (1 + rec) * x[2] ** 2 * s_NP_2 * np.exp(R_NP_2 @ u),
-        "peak": (1 + Ninorm) * (1 + th_bkg) * (1 + rec) * (1 + NiB) * b_BaBar_peak_K0,
-        "comb": (1 + Ninorm) * (1 + th_bkg) * b_BaBar_comb_K0,
+        "SM": (1 + rec) * mu[0] * sig[0],
+        "NP_1": (1 + rec) * mu[1] * sig[1],
+        "NP_2": (1 + rec) * mu[2] * sig[2],
+        "peak": shift * (1 + rec) * (1 + NiB) * b_BaBar_peak_K0,
+        "comb": shift * b_BaBar_comb_K0,
     }
 
 
@@ -643,44 +573,36 @@ def min_logLL(logLL, model_1=None, model_2=None, *legacy_args, **legacy_kwargs):
     # Minimise w.r.t. nuisance params., keeping signal strength fixed to SM value (mu = 1)
     profile_min_SM = _fit(kind, tpl, _x_init(kind), ["x0", "x1", "x2"]).fval
 
+    # Fit mu_SM (no NP), or the NP coupling(s) with mu_SM = 1, together with the nuisance params.
+    fixed = {0: ["x1", "x2"], 1: ["x0", "x2"], 2: ["x0"]}[NP]
+    m = _fit(kind, tpl, _x_init(kind), fixed, errors=True)
+    delta_chi2 = m.fval - profile_min_SM
     if NP == 0:
-        # Minimise w.r.t. signal strength and nuisance params.
-        m = _fit(kind, tpl, _x_init(kind), ["x1", "x2"], errors=True)
-        return FitResult(m.values[0], m.errors[0], m, m.fval - profile_min_SM)
-
+        return FitResult(m.values[0], m.errors[0], m, delta_chi2)
+    value = tuple(m.values[k] * unscale[k - 1] for k in range(1, NP + 1))
+    error = tuple(m.errors[k] * unscale[k - 1] for k in range(1, NP + 1))
     if NP == 1:
-        # Minimise Log Likelihood of SM + NP (1 coupling)
-        m = _fit(kind, tpl, _x_init(kind), ["x0", "x2"], errors=True)
-        return FitResult(m.values[1] * unscale[0], m.errors[1] * unscale[0], m, m.fval - profile_min_SM)
-
-    # Minimise Log Likelihood of SM + NP (2 couplings)
-    m = _fit(kind, tpl, _x_init(kind), ["x0"], errors=True)
-    return FitResult(
-        (m.values[1] * unscale[0], m.values[2] * unscale[1]),
-        (m.errors[1] * unscale[0], m.errors[2] * unscale[1]),
-        m,
-        m.fval - profile_min_SM,
-    )
+        value, error = value[0], error[0]
+    return FitResult(value, error, m, delta_chi2)
 
 
 def profile_logLL_SM(logLL, mu):
-    "Profile log likelihood w.r.t. the signal strength and nuisance parameters."
+    """Profile -2 Delta ln L of the SM signal strength mu (a number or an array of them).
+
+    At each mu the nuisance params. are fitted; the result is relative to the global minimum,
+    where mu is fitted too (computed once).
+    """
     kind = _kind_of(logLL)
     tpl = np_templates(kind)
-
-    # Minimise w.r.t. nuisance params. for fixed signal strength
-    profile_min = _fit(kind, tpl, _x_init(kind, (mu, 0.0, 0.0)), ["x0", "x1", "x2"]).fval
-
-    # Minimise w.r.t. signal strength and nuisance params. (i.e. global minimum)
     global_min = _fit(kind, tpl, _x_init(kind), ["x1", "x2"]).fval
-
-    return profile_min - global_min
+    profile = [_fit(kind, tpl, _x_init(kind, (m, 0.0, 0.0)), ["x0", "x1", "x2"]).fval for m in np.ravel(mu)]
+    return np.reshape(profile, np.shape(mu)) - global_min
 
 
 def _lep_term(Br_LEP):
-    "LEP log likelihood and its gradient as functions of the parameter vector x (uses x[1], x[2])."
+    "LEP log likelihood and its gradient as functions of the parameter vector x."
     B1, B2 = float(Br_LEP[0]), float(Br_LEP[1])
-    return (lambda x: logLL_LEP(np.array([x[1], x[2], B1, B2])), lambda x: grad_LEP(np.asarray(x, dtype=float), B1, B2))
+    return (lambda x: logLL_LEP(x, B1, B2), lambda x: grad_LEP(x, B1, B2))
 
 
 def _profile_point(c1, c2, sig, templates, global_mins, Br_LEP):
@@ -699,7 +621,7 @@ def _profile_point(c1, c2, sig, templates, global_mins, Br_LEP):
 
     # LEP (needed for both the LEP-only and the combined result)
     if sig[2] == 1 or sig[3] == 1:
-        lep = logLL_LEP(np.concatenate(([c1, c2], [Br_LEP[0], Br_LEP[1]])))
+        lep = logLL_LEP(np.array(head), float(Br_LEP[0]), float(Br_LEP[1]))
         if sig[2] == 1:
             res[2] = lep - global_mins[2]
 
