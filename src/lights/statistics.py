@@ -1,7 +1,8 @@
 import numpy as np
 from scipy.special import xlogy
 
-def reduced_chisq(m, obs, n_unconstrained = None):
+
+def reduced_chisq(m, obs, n_unconstrained=None):
     """Reduced chi-squared (deviance per degree of freedom) of a binned Poisson fit.
 
     Uses the deviance: the fitted -2 ln L (m.fval, including the Gaussian
@@ -25,4 +26,4 @@ def reduced_chisq(m, obs, n_unconstrained = None):
     chisq = m.fval - saturated
     dof = len(obs) - n_unconstrained
 
-    return chisq/dof
+    return chisq / dof

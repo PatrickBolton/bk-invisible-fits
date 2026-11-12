@@ -14,8 +14,9 @@ DATA_ROOT = Path(os.environ.get("LIGHTS_DATA_DIR", PROJECT_ROOT / "data")).expan
 if not (DATA_ROOT / "BtoKEmiss").is_dir():
     raise FileNotFoundError(
         f"lights data not found in {DATA_ROOT} (expected the BtoKEmiss and form_factors "
-        f"directories). Set the LIGHTS_DATA_DIR environment variable to the data directory.")
+        f"directories). Set the LIGHTS_DATA_DIR environment variable to the data directory."
+    )
 
-BTOKEMISS_DIR = DATA_ROOT / "BtoKEmiss"         # experimental inputs (Belle II, BaBar)
-FORM_FACTOR_DIR = DATA_ROOT / "form_factors"    # form factor coefficients and covariances
-PLOTS_DIR = PROJECT_ROOT / "plots"              # figure output
+BTOKEMISS_DIR = DATA_ROOT / "BtoKEmiss"  # experimental inputs (Belle II, BaBar)
+FORM_FACTOR_DIR = DATA_ROOT / "form_factors"  # form factor coefficients and covariances
+PLOTS_DIR = PROJECT_ROOT / "plots"  # figure output
