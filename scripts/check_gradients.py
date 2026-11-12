@@ -8,13 +8,13 @@ import numpy as np
 from lights.likelihoods import (logLL_BelleII, logLL_BaBar, logLL_Combined, logLL_LEP,
                                 grad_BelleII, grad_BaBar, grad_Combined, grad_LEP,
                                 np_templates, NPAR_BelleII, NPAR_BaBar)
-from lights.branching_fractions import cdict
+from lights.models import Model
 
 rng = np.random.default_rng(1)
-c1 = np.zeros((6, 14)); c1[cdict['CSL_s']] = 1e-8; c1[cdict['CSR_s']] = 3e-9
-c2 = np.zeros((6, 14)); c2[cdict['CSL_ss']] = 1e-3
-tB = np_templates("BelleII", 1.0, c1, c2, 1e4)
-tb = np_templates("BaBar", 1.0, c1, c2, 1e4)
+m1 = Model("phi", 1.0, CSL = 1e-8, CSR = 3e-9)
+m2 = Model("phiphi", 1.0, Lambda = 1e4, CSL = 1e-3)
+tB = np_templates("BelleII", m1, m2)
+tb = np_templates("BaBar", m1, m2)
 
 def random_x(npar):
     x = np.concatenate(([1.3, 0.7, -0.4], 0.3 * rng.normal(size = npar)))

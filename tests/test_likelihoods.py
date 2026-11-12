@@ -7,7 +7,7 @@ import pytest
 from joblib import Parallel, delayed
 
 from lights.load_data import obs
-from lights.branching_fractions import cdict
+from lights.models import Model
 from lights.statistics import reduced_chisq
 from lights.likelihoods import (logLL_BelleII, logLL_BaBar, logLL_Combined, logLL_LEP,
                                 grad_BelleII, grad_BaBar, grad_Combined, grad_LEP,
@@ -15,20 +15,11 @@ from lights.likelihoods import (logLL_BelleII, logLL_BaBar, logLL_Combined, logL
                                 np_templates, min_logLL, profile_logLL_SM, profile_logLL_scan,
                                 NPAR_BelleII, NPAR_BaBar, _kind_of, _fit, _x_init)
 
-ZERO = np.zeros((6, 14))
-
-
-def couplings(**kw):
-    c = np.zeros((6, 14))
-    for name, value in kw.items():
-        c[cdict[name]] = value
-    return c
-
-
-C1 = couplings(CSL_s = 1e-8, CSR_s = 3e-9)
-C2 = couplings(CSL_ss = 1e-3)
-T_BELLE = np_templates("BelleII", 1.0, C1, C2, 1e4)
-T_BABAR = np_templates("BaBar", 1.0, C1, C2, 1e4)
+M1 = Model("phi", 1.0, CSL = 1e-8, CSR = 3e-9)
+M2 = Model("phiphi", 1.0, Lambda = 1e4, CSL = 1e-3)
+T_BELLE = np_templates("BelleII", M1, M2)
+T_BABAR = np_templates("BaBar", M1, M2)
+GS = Model("phi", 2.1, CSL = 1e-8, CSR = 1e-8)
 
 
 def finite_difference(f, x, h = 1e-6):
@@ -78,30 +69,28 @@ def test_SM_fit_regression():
 
 
 def test_NP_fit_regression():
-    c = couplings(CSL_s = 1e-8, CSR_s = 1e-8)
-    x1, err, m, dchi2 = min_logLL(logLL_BelleII, None, None, 2.1, c, ZERO, 1., NP = 1)
+    x1, err, m, dchi2 = min_logLL(logLL_BelleII, GS)
     assert abs(x1) == pytest.approx(1.571, abs = 0.003)
     assert dchi2 == pytest.approx(-20.05, abs = 0.02)
 
 
 def test_NP_fit_in_parallel_workers():
-    c = couplings(CSL_s = 1e-8, CSR_s = 1e-8)
-    fit = lambda mX: min_logLL(logLL_BelleII, None, None, mX, c, ZERO, 1., NP = 1)[3]
-    res = Parallel(n_jobs = 2)(delayed(fit)(mX) for mX in (1.0, 2.1))
+    fit = lambda model: min_logLL(logLL_BelleII, model)[3]
+    res = Parallel(n_jobs = 2)(delayed(fit)(GS.with_mass(mX)) for mX in (1.0, 2.1))
     assert res[1] == pytest.approx(-20.05, abs = 0.02)
 
 
 def test_vanishing_template_is_still_fitted():
     # Templates ~ m_X^2 need large couplings; normalisation keeps them within reach of Migrad
-    c = couplings(CTPL_FF = 1., CTPR_FF = -1.)
-    d_small = min_logLL(logLL_BelleII, None, None, 1e-4, c, ZERO, 1e2, NP = 1)[3]
-    d_ref = min_logLL(logLL_BelleII, None, None, 1e-2, c, ZERO, 1e2, NP = 1)[3]
+    model = Model("PsiPsi", 1e-4, Lambda = 1e2, CTPL = 1., CTPR = -1.)
+    d_small = min_logLL(logLL_BelleII, model)[3]
+    d_ref = min_logLL(logLL_BelleII, model.with_mass(1e-2))[3]
     assert d_small < 0
     assert d_small == pytest.approx(d_ref, abs = 0.01)
 
 
 def test_nuisances_cannot_cancel_a_large_signal():
-    tpl = np_templates("BaBar", 2.1, couplings(CSL_s = 5e-9, CSR_s = 5e-9), couplings(CSL_s = 5e-9, CSR_s = -5e-9), 1.)
+    tpl = np_templates("BaBar", Model("phi", 2.1, CSL = 5e-9, CSR = 5e-9), Model("phi", 2.1, CSL = 5e-9, CSR = -5e-9))
     m = _fit("BaBar", tpl, _x_init("BaBar", (1., 8., 30.)), ["x0", "x1", "x2"])
     nominal = 30**2 * tpl[1]
     fitted = components_BaBar(m.values, *tpl)["NP_2"]
@@ -110,9 +99,9 @@ def test_nuisances_cannot_cancel_a_large_signal():
 
 
 def test_scan_minimum_is_close_to_zero():
-    c1 = couplings(CSL_s = 5e-9, CSR_s = 5e-9)
-    c2 = couplings(CSL_s = 5e-9, CSR_s = -5e-9)
-    res = profile_logLL_scan(2.1, c1, c2, [-8, 8], [-30, 30], pts = [15, 15], Lambda = 1., n_jobs = 2)
+    gS = Model("phi", 2.1, CSL = 5e-9, CSR = 5e-9)
+    gP = Model("phi", 2.1, CSL = 5e-9, CSR = -5e-9)
+    res = profile_logLL_scan(gS, gP, [-8, 8], [-30, 30], pts = [15, 15], n_jobs = 2)
     for name, a in zip(["BelleII", "BaBar", "LEP", "Combined"], res):
         assert np.isfinite(a).all(), name
         assert -0.05 < a.min() < 1.0, name
@@ -120,9 +109,8 @@ def test_scan_minimum_is_close_to_zero():
 
 def test_reduced_chisq_counts_free_strengths():
     m_SM = min_logLL(logLL_BelleII)[2]
-    c = couplings(CSL_s = 1e-8, CSR_s = 1e-8)
-    m_NP = min_logLL(logLL_BelleII, None, None, 2.1, c, ZERO, 1., NP = 1)[2]
+    m_NP = min_logLL(logLL_BelleII, GS)[2]
     assert reduced_chisq(m_SM, obs) == pytest.approx(reduced_chisq(m_SM, obs, 1))
     assert reduced_chisq(m_NP, obs) == pytest.approx(reduced_chisq(m_NP, obs, 1))   # x0 fixed, x1 free
-    m_free = _fit("BelleII", np_templates("BelleII", 2.1, c), _x_init("BelleII"), ["x2"])
+    m_free = _fit("BelleII", np_templates("BelleII", GS), _x_init("BelleII"), ["x2"])
     assert reduced_chisq(m_free, obs) == pytest.approx(reduced_chisq(m_free, obs, 2))

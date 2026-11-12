@@ -379,61 +379,28 @@ def B_Bspsipsi(mpsi, Ci, Lambda = 1, is_ident = False):
     
     return Bs_rate
 
-# Total differential branching fractions
-cdict = {
-    'CSL_s' : (0, 0), 'CSR_s' : (0, 1),
-
-    'CVL_v' : (1, 0), 'CVR_v' : (1, 1), 'CTL_v' : (1, 2), 'CTR_v' : (1, 3),
-    
-    'CSL_ss' : (2, 0), 'CSR_ss' : (2, 1), 'CVL_ss' : (2, 2), 'CVR_ss' : (2, 3), 
-
-    'CVL_ff': (3, 0), 'CVR_ff': (3, 1), 'CVLp_ff': (3, 2), 'CVRp_ff': (3, 3), 
-    'CSL_ff': (3, 4), 'CSR_ff': (3, 5), 'CSLp_ff': (3, 6), 'CSRp_ff': (3, 7),
-    'CTL_ff': (3, 8), 'CTR_ff': (3, 9),
-
-    'CSL_vv' : (4, 0), 'CSR_vv' : (4, 1),
-
-    'CVL_FF': (5, 0), 'CVR_FF': (5, 1), 'CVLp_FF': (5, 2), 'CVRp_FF': (5, 3), 
-    'CSL_FF': (5, 4), 'CSR_FF': (5, 5), 'CSLp_FF': (5, 6), 'CSRp_FF': (5, 7),
-    'CTL_FF': (5, 8), 'CTR_FF': (5, 9), 
-    'CTSL_FF': (5, 10), 'CTSR_FF': (5, 11), 
-    'CTPL_FF': (5, 12), 'CTPR_FF': (5, 13)}
-
-def B_tot(mX, cX, Lambda, a_vals):
-    """Total branching fraction for B -> K(*) X. Channels whose couplings are all zero are skipped."""
-    Ci_1, Ci_2 = cX[0,0:2], cX[1,0:4]
-
-    rates = np.zeros(4)
-    if np.any(Ci_1):
-        rates = rates + B_BKphi(mX, Ci_1, a_vals)
-    if np.any(Ci_2):
-        rates = rates + B_BKV(mX, Ci_2, Lambda, a_vals)
-
-    return rates
-
-def dBdqsq_tot(qsq, mX, cXY, Lambda, is_ident = False, a_vals = A_VALS_GRDV):
-    """Total differential branching fraction for B -> K(*) X X in q^2.
-
-    Channels whose couplings are all zero are skipped, since usually only one is switched on.
-    """
-    Ci_1, Ci_2, Ci_3, Ci_4 = cXY[0,0:4], cXY[1,0:10], cXY[2,0:2], cXY[3,0:14]
-
-    rates = np.zeros((4,) + np.shape(qsq))
-    for rate, Ci in ((dBdqsq_BKphiphi, Ci_1), (dBdqsq_BKpsipsi, Ci_2),
-                     (dBdqsq_BKVV, Ci_3), (dBdqsq_BKPsiPsi, Ci_4)):
-        if np.any(Ci):
-            rates = rates + rate(qsq, mX, Ci, Lambda, is_ident, a_vals)
-
-    return rates
-
-def B_Bstot(mX, cNP, Lambda, is_ident = False):
-    """Total branching fraction for Bs -> invisible."""
-    
-    cX, cXY = cNP[0:2], cNP[2:6]
-    
-    Ci_1, Ci_2, Ci_3, Ci_4 = cXY[0,0:4], cXY[1,0:10], cXY[2,0:2], cXY[3,0:14]
-    
-    Bs_rate = (  B_Bsphiphi(mX, Ci_1, Lambda, is_ident) 
-               + B_Bspsipsi(mX, Ci_2, Lambda, is_ident))
-    
-    return Bs_rate
+# Channel totals and the coupling layout now live in lights.models (CHANNELS, Model,
+# B_tot, dBdqsq_tot, B_Bs). The old names below are kept for compatibility.
+def __getattr__(name):
+    if name in ("cdict", "B_tot", "dBdqsq_tot", "B_Bstot"):
+        import warnings
+        from . import models
+        warnings.warn(f"lights.branching_fractions.{name} is deprecated; use lights.models "
+                      "(Model, CHANNELS, B_tot, dBdqsq_tot, B_Bs)", DeprecationWarning, stacklevel = 2)
+        if name == "cdict":
+            return models.cdict
+        def legacy(*args, **kwargs):
+            if name == "B_tot":         # B_tot(mX, cX, Lambda, a_vals), cX = rows 0-1
+                mX, cX, Lambda, a_vals = args
+                cNP = np.zeros((6, 14)); cNP[0:2] = cX
+                return models.B_tot(models.Model.from_cnp(cNP, mX, Lambda), a_vals)
+            if name == "dBdqsq_tot":    # dBdqsq_tot(qsq, mX, cXY, Lambda, is_ident, a_vals), cXY = rows 2-5
+                vals = dict(zip(("qsq", "mX", "cXY", "Lambda", "is_ident", "a_vals"), args), **kwargs)
+                cNP = np.zeros((6, 14)); cNP[2:6] = vals["cXY"]
+                m = models.Model.from_cnp(cNP, vals["mX"], vals["Lambda"], vals.get("is_ident", False))
+                return models.dBdqsq_tot(vals["qsq"], m, vals.get("a_vals", A_VALS_GRDV))
+            vals = dict(zip(("mX", "cNP", "Lambda", "is_ident"), args), **kwargs)   # B_Bstot
+            return models.B_Bs(models.Model.from_cnp(vals["cNP"], vals["mX"], vals["Lambda"],
+                                                     vals.get("is_ident", False)))
+        return legacy
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

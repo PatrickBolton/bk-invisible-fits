@@ -5,7 +5,7 @@ from lights.load_data import (Nbins, obs, b_cont, b_charged, b_neutral, w_cont, 
                               b_BaBar_K0_invcov, sigrecB0Ks0, NiBs, NinormB0Ks0)
 from lights.signal_rates import (s_SM_BelleII, s_SM_BaBar, J_SM_BelleII, J_SM_BaBar,
                                  NU_BelleII, NU_BaBar, signal_template, Nrec_BelleII, Nrec_BaBar)
-from lights.branching_fractions import B_Bstot
+from lights.models import Model, B_Bs, from_legacy
 
 import numba as nb
 from tqdm import tqdm
@@ -363,18 +363,18 @@ def _fill_zero(experiment, s_NP_1, s_NP_2, R_NP_1, R_NP_2):
     return (z1 if s_NP_1 is None else s_NP_1, z1 if s_NP_2 is None else s_NP_2,
             z2 if R_NP_1 is None else R_NP_1, z2 if R_NP_2 is None else R_NP_2)
 
-def np_templates(experiment, mX = 1, cNP_1 = CNP_zero, cNP_2 = CNP_zero, Lambda = 1, is_ident = False):
-    """NP templates (s_NP_1, s_NP_2, R_NP_1, R_NP_2) for one experiment ("BelleII" or "BaBar").
+def np_templates(experiment, model_1 = None, model_2 = None):
+    """NP templates (s_NP_1, s_NP_2, R_NP_1, R_NP_2) of two Models for one experiment ("BelleII" or "BaBar").
 
-    A template whose couplings are all zero is returned as zeros without computing it.
+    A missing model (None) or one with no signal in this experiment gives zero templates.
     """
-    def one(c):
-        if not np.any(c):
+    def one(model):
+        if model is None or not np.any(model.C):
             return np.zeros(_NBINS[experiment]), np.zeros((_NBINS[experiment], _NU[experiment]))
-        s0, J = signal_template(experiment, 0, mX, c, Lambda, is_ident)
+        s0, J = signal_template(experiment, model)
         return s0, _relative(s0, J)
-    (s1, J1), (s2, J2) = one(cNP_1), one(cNP_2)
-    return s1, s2, J1, J2
+    (s1, R1), (s2, R2) = one(model_1), one(model_2)
+    return s1, s2, R1, R2
 
 def _limits(kind):
     """Parameter limits for a likelihood of the given kind ("BelleII", "BaBar", "Combined").
@@ -449,23 +449,41 @@ def _normalise(tpl, target = 100.):
         out_s.append(s / scale); out_J.append(R)   # R = J/s is scale-free
     return (out_s[0], out_s[1], out_J[0], out_J[1]), scales
 
-def min_logLL(logLL, Nrec = None, Nbins = None, mX = 1, cNP_1 = CNP_zero, cNP_2 = CNP_zero, Lambda = 1e4, is_ident = False, NP = 0):
-    """Minimises the log likelihood w.r.t. the SM signal strength, NP couplings, and nuisance parameters.
+def min_logLL(logLL, model_1 = None, model_2 = None, *legacy_args, **legacy_kwargs):
+    """Minimise the log likelihood w.r.t. the SM signal strength or NP couplings and the nuisance parameters.
 
-    logLL is logLL_BelleII or logLL_BaBar, which also selects the experiment. Nrec and Nbins
-    are accepted for backwards compatibility but no longer needed.
+    logLL:     logLL_BelleII or logLL_BaBar, which selects the experiment
+    model_1/2: NP Models whose couplings are scaled by the fitted multipliers x1, x2
+               (signal strengths x1^2, x2^2). With no model, the SM signal strength mu_SM is
+               fitted; with one or two models, mu_SM = 1 and x1 (and x2) are fitted.
 
-    Returns (value, error, m, Delta chi^2) where value and error are mu_SM (NP = 0) or the
-    NP coupling multiplier(s) in units of cNP_1 / cNP_2 (NP = 1, 2). The NP templates are
-    normalised internally (see _normalise), so for NP = 1, 2 the couplings inside the Minuit
-    object m are in normalised units; use the returned values instead.
+    Returns (value, error, m, Delta chi^2): mu_SM, or the coupling multiplier(s) of the
+    model(s), with Delta chi^2 relative to the SM (mu_SM = 1, no NP). The NP templates are
+    normalised internally (see _normalise), so the couplings inside the Minuit object m are
+    in normalised units; use the returned values instead.
+
+    (The old call min_logLL(logLL, Nrec, Nbins, mX, cNP_1, cNP_2, Lambda, is_ident, NP = ...)
+    with coupling arrays still works.)
     """
-    if NP not in (0, 1, 2):
-        raise ValueError("NP must be 0, 1 or 2")
+    if legacy_args or legacy_kwargs or callable(model_1):
+        vals = from_legacy("min_logLL", (model_1, model_2) + legacy_args, legacy_kwargs,
+                           ("Nrec", "Nbins", "mX", "cNP_1", "cNP_2", "Lambda", "is_ident"),
+                           {"mX": 1, "cNP_1": None, "cNP_2": None, "Lambda": 1e4, "is_ident": False, "NP": 0})
+        NP = vals["NP"]
+        if NP not in (0, 1, 2):
+            raise ValueError("NP must be 0, 1 or 2")
+        model_1 = vals["cNP_1"] if NP >= 1 else None
+        model_2 = vals["cNP_2"] if NP == 2 else None
+        if NP >= 1 and model_1 is None:      # all-zero couplings: nothing to fit, but keep the old behaviour
+            model_1 = Model("phi", vals["mX"])
+        if NP == 2 and model_2 is None:
+            model_2 = Model("phi", vals["mX"])
+    if model_1 is None and model_2 is not None:
+        raise ValueError("Pass a single NP model as model_1")
+    NP = (model_1 is not None) + (model_2 is not None)
     kind = _kind_of(logLL)
 
-    tpl = np_templates(kind, mX, cNP_1 if NP >= 1 else CNP_zero, cNP_2 if NP == 2 else CNP_zero,
-                       Lambda, is_ident)
+    tpl = np_templates(kind, model_1, model_2)
     tpl, scales = _normalise(tpl)
     unscale = 1/np.sqrt(scales[0]), 1/np.sqrt(scales[1])
 
@@ -534,16 +552,30 @@ def _profile_point(c1, c2, sig, templates, global_mins, Br_LEP):
     return res
 
 
-def profile_logLL_scan(mX, cNP_1, cNP_2, cNP_1_lims, cNP_2_lims,
-                       pts=[100, 100], Lambda = 1, is_ident = False, sig=[1, 1, 1, 1], n_jobs=-1):
-    "Profile log likelihood w.r.t. the two NP couplings cNP_1 and cNP_2 (parallel over the grid)."
+def profile_logLL_scan(model_1, model_2, lims_1, lims_2, *legacy_args, pts = [100, 100], sig = [1, 1, 1, 1],
+                       n_jobs = -1, **legacy_kwargs):
+    """Profile log likelihood on a grid of the coupling multipliers of two NP Models (parallel over the grid).
+
+    The couplings of model_1 and model_2 are scaled by x1 in lims_1 and x2 in lims_2 (pts
+    points each); the two models may be different channels or masses. sig selects which of
+    [Belle II, BaBar, LEP, combined] to compute. Returns the four Delta chi^2 grids, indexed
+    [x2, x1]. (The old call profile_logLL_scan(mX, cNP_1, cNP_2, lims_1, lims_2, pts, Lambda,
+    is_ident, sig, n_jobs) with coupling arrays still works.)
+    """
+    if not isinstance(model_1, Model) or legacy_args or legacy_kwargs:
+        vals = from_legacy("profile_logLL_scan", (model_1, model_2, lims_1, lims_2) + legacy_args, legacy_kwargs,
+                           ("mX", "cNP_1", "cNP_2", "lims_1", "lims_2", "pts", "Lambda", "is_ident", "sig", "n_jobs"),
+                           {"pts": pts, "Lambda": 1., "is_ident": False, "sig": sig, "n_jobs": n_jobs})
+        model_1, model_2 = vals["cNP_1"], vals["cNP_2"]
+        lims_1, lims_2, pts, sig, n_jobs = vals["lims_1"], vals["lims_2"], vals["pts"], vals["sig"], vals["n_jobs"]
+    cNP_1_lims, cNP_2_lims = lims_1, lims_2
 
     # ---- Signal templates (computed once, shared by every grid point) ----
-    tpl_BelleII = np_templates("BelleII", mX, cNP_1, cNP_2, Lambda, is_ident)
-    tpl_BaBar = np_templates("BaBar", mX, cNP_1, cNP_2, Lambda, is_ident)
+    tpl_BelleII = np_templates("BelleII", model_1, model_2)
+    tpl_BaBar = np_templates("BaBar", model_1, model_2)
     templates = {"BelleII": tpl_BelleII, "BaBar": tpl_BaBar, "Combined": tpl_BelleII + tpl_BaBar}
 
-    Br_LEP = (B_Bstot(mX, cNP_1, Lambda, is_ident), B_Bstot(mX, cNP_2, Lambda, is_ident))
+    Br_LEP = (B_Bs(model_1), B_Bs(model_2))
 
     # ---- Global minima (only 3 fits, done serially) ----
     global_mins = [0.0, 0.0, 0.0, 0.0]   # [BelleII, BaBar, LEP, Combined]
@@ -567,7 +599,7 @@ def profile_logLL_scan(mX, cNP_1, cNP_2, cNP_1_lims, cNP_2_lims,
             for c1 in cNP_1_vals for c2 in cNP_2_vals)
 
     gen = Parallel(n_jobs=n_jobs, return_as="generator")(jobs)
-    results = np.array(list(tqdm(gen, total=n1 * n2, desc=f"mX = {mX:.3g}")))
+    results = np.array(list(tqdm(gen, total=n1 * n2, desc=f"{model_1.channel.name}, mX = {model_1.mX:.3g}")))
 
     # results is ordered (i over cNP_1, j over cNP_2) -> reshape, then transpose to [j, i] like the original
     results = results.reshape(n1, n2, 4)

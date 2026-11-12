@@ -6,15 +6,8 @@ from scipy.integrate import quad
 
 from lights.constants import mB, mK, mKs
 from lights import form_factors as ff
-from lights.branching_fractions import (cdict, dBdqsq_SM, dBdqsq_tot, dBdqsq_BKPsiPsi,
-                                        B_Bsphiphi)
-
-
-def couplings(**kw):
-    c = np.zeros((6, 14))
-    for name, value in kw.items():
-        c[cdict[name]] = value
-    return c
+from lights.branching_fractions import dBdqsq_SM, dBdqsq_BKPsiPsi, B_Bsphiphi
+from lights.models import Model
 
 
 def test_SM_branching_fractions():
@@ -24,11 +17,11 @@ def test_SM_branching_fractions():
     assert BKs == pytest.approx(8.917e-6, rel = 1e-3)
 
 
-@pytest.mark.parametrize("name", ["CSL_vv", "CVL_FF"])
-def test_no_K_rate_leaks_into_Kstar_rows(name):
+@pytest.mark.parametrize("model", [Model("VV", 0.3, Lambda = 1e2, CSL = 1.),
+                                   Model("PsiPsi", 0.3, Lambda = 1e2, CVL = 1.)])
+def test_no_K_rate_leaks_into_Kstar_rows(model):
     # dBdqsq_BKVV and dBdqsq_BKPsiPsi only implement B -> K; their K* rows must be zero
-    c = couplings(**{name: 1.})
-    rates = dBdqsq_tot(np.array([2., 5.]), 0.3, c[2:6], 1e2)
+    rates = model.dBdqsq(np.array([2., 5.]))
     assert rates.shape == (4, 2)
     assert np.all(rates[0] > 0)
     assert np.all(rates[1:] == 0)
