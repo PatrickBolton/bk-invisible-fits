@@ -8,6 +8,8 @@ for the names), the scale Lambda of the effective operators and, for pairs, is_i
 The B -> K(*) functions return four rows: K, K*, K* longitudinal and K* transverse (see
 the row indices K, KS, KS_L, KS_T in lights.models). Two-body functions return branching
 fractions, three-body functions dB/dq^2 in GeV^-2.
+
+The rate formulas are aligned by hand, so this file is excluded from ruff format (pyproject.toml).
 """
 
 import numpy as np
@@ -78,19 +80,13 @@ def B_BKphi(mphi, Ci, a_vals=A_VALS_GRDV):
     f0 = f0f(mphi**2, aK_vals)
     A0 = A0f(mphi**2, aKs_vals)
 
-    # Hand-aligned formula, excluded from automatic formatting
-    # fmt: off
     BK_rate = (tauB * pK/(8*np.pi)
                * (abs(gS)**2 * (mB*DEL_K/(mb - ms) * f0)**2)
               ) * limsK
-    # fmt: on
 
-    # Hand-aligned formula, excluded from automatic formatting
-    # fmt: off
     BKs_rate = (tauB0 * pKs/(8*np.pi)
                 * (4*abs(gP)**2 * (pKs/(mb + ms) * A0)**2)
                ) * limsKs
-    # fmt: on
 
     return _rates(BK_rate, BKs_rate, BKs_rate)
 
@@ -108,17 +104,12 @@ def B_BKV(mV, Ci, Lambda=1, a_vals=A_VALS_GRDV):
     V, A1, A12 = Vf(q2, aKs_vals), A1f(q2, aKs_vals), A12f(q2, aKs_vals)
     T1, T2, T23 = T1f(q2, aKs_vals), T2f(q2, aKs_vals), T23f(q2, aKs_vals)
 
-    # Hand-aligned formula, excluded from automatic formatting
-    # fmt: off
     BK_rate = (tauB * pK/(2*np.pi)
                * (abs(hV)**2 * (pK/mV)**2 * fp**2
                   + 4*abs(hT)**2 * (pK/Lambda)**2 * (mV/(mB + mK) * fT)**2
                   + 4*np.real(hV*np.conjugate(hT)) * pK**2/((mB + mK)*Lambda) * fp * fT)
               ) * limsK
-    # fmt: on
 
-    # Hand-aligned formula, excluded from automatic formatting
-    # fmt: off
     def Ks_rate(A1, V, T1, T2):
         "K* rate for the given transverse form factors (A1, V, T1, T2); zero them for the longitudinal part."
         return (tauB0 * pKs/(2*np.pi)
@@ -129,7 +120,6 @@ def B_BKV(mV, Ci, Lambda=1, a_vals=A_VALS_GRDV):
                    - 8*np.real(hV*np.conjugate(hT)) * pKs**2/((mB + mKs)*Lambda) * V*T1
                    - 2*np.real(hA*np.conjugate(hTt)) * (mB + mKs)/Lambda * (DEL_KS * A1*T2 + 16*(mKs/(mB + mKs))**2 * A12*T23))
                ) * limsKs
-    # fmt: on
 
     # longitudinal K*: the transverse form factors set to zero
     return _rates(BK_rate, Ks_rate(A1, V, T1, T2), Ks_rate(0, 0, 0, 0))
@@ -154,16 +144,11 @@ def dBdqsq_BKphiphi(qsq, mphi, Ci, Lambda=1, is_ident=False, a_vals=A_VALS_GRDV)
     fp, f0 = fpf(qsq, aK_vals), f0f(qsq, aK_vals)
     V, A0, A1, A12 = Vf(qsq, aKs_vals), A0f(qsq, aKs_vals), A1f(qsq, aKs_vals), A12f(qsq, aKs_vals)
 
-    # Hand-aligned formula, excluded from automatic formatting
-    # fmt: off
     BK_rate = (tauB * bphi/(96*np.pi**3) * pK/Lambda**2 * 1/a
                * (3/4*abs(gSS)**2 * (mB*DEL_K/(mb - ms) * f0)**2
                     + abs(gVV)**2 * (pK/Lambda)**2 * bphi**2 * fp**2)
               ) * limsK
-    # fmt: on
 
-    # Hand-aligned formula, excluded from automatic formatting
-    # fmt: off
     def Ks_rate(V, A1):
         "K* rate for the given transverse form factors (V, A1); zero them for the longitudinal part."
         return (tauB0 * bphi/(96*np.pi**3) * pKs/Lambda**2 * 1/a
@@ -171,7 +156,6 @@ def dBdqsq_BKphiphi(qsq, mphi, Ci, Lambda=1, is_ident=False, a_vals=A_VALS_GRDV)
                    + 2*abs(gVV)**2 * qsq/Lambda**2 * bphi**2 * (pKs/(mB + mKs) * V)**2
                    + abs(gAV)**2 * qsq/Lambda**2 * bphi**2 * (1/2*((mB + mKs)/mB * A1)**2 + 16*(mKs*A12)**2/qsq))
                ) * limsKs
-    # fmt: on
 
     # longitudinal K*: the transverse form factors set to zero
     return _rates(BK_rate, Ks_rate(V, A1), Ks_rate(0, 0))
@@ -202,8 +186,6 @@ def dBdqsq_BKpsipsi(qsq, mpsi, Ci, Lambda=1, is_ident=False, a_vals=A_VALS_GRDV)
     V, A0, A1, A12 = Vf(qsq, aKs_vals), A0f(qsq, aKs_vals), A1f(qsq, aKs_vals), A12f(qsq, aKs_vals)
     T1, T2, T23 = T1f(qsq, aKs_vals), T2f(qsq, aKs_vals), T23f(qsq, aKs_vals)
 
-    # Hand-aligned formula, excluded from automatic formatting
-    # fmt: off
     BK_rate = (tauB * bpsi/(24*np.pi**3) * pK*qsq/Lambda**4 * 1/a
                * (((abs(fVV)**2 * bp2 + abs(fVA)**2 * b2) * fp
                    + 12*np.real(fVV * np.conjugate(fTT)) * mpsi/(mB + mK) * fT) * pK**2/qsq * fp
@@ -212,10 +194,7 @@ def dBdqsq_BKpsipsi(qsq, mpsi, Ci, Lambda=1, is_ident=False, a_vals=A_VALS_GRDV)
                          + 4*np.real(fVA * np.conjugate(fSP)) * mpsi*(mb - ms)/qsq) * (mB*DEL_K/(mb - ms) * f0)**2
                   + 2*(abs(fTT)**2 * bpp2 + abs(fTtT)**2 * b2) * (pK/(mB + mK) * fT)**2)
               ) * limsK
-    # fmt: on
 
-    # Hand-aligned formula, excluded from automatic formatting
-    # fmt: off
     def Ks_rate(A1, V, T1, T2):
         "K* rate for the given transverse form factors (A1, V, T1, T2); zero them for the longitudinal part."
         return (tauB0 * bpsi/(24*np.pi**3) * pKs*qsq/Lambda**4 * 1/a
@@ -230,7 +209,6 @@ def dBdqsq_BKpsipsi(qsq, mpsi, Ci, Lambda=1, is_ident=False, a_vals=A_VALS_GRDV)
                    - 6*np.real(fAV * np.conjugate(fTtT)) * mpsi*(mB + mKs)/qsq * (DEL_KS * A1*T2
                                                                                   + 16*(mKs/(mB + mKs))**2 * A12*T23))
                ) * limsKs
-    # fmt: on
 
     # longitudinal K*: the transverse form factors set to zero
     return _rates(BK_rate, Ks_rate(A1, V, T1, T2), Ks_rate(0, 0, 0, 0))
@@ -250,12 +228,9 @@ def dBdqsq_BKVV(qsq, mV, Ci, Lambda=1, is_ident=False, a_vals=A_VALS_GRDV):
     aK_vals, _ = a_vals
     f0 = f0f(qsq, aK_vals)
 
-    # Hand-aligned formula, excluded from automatic formatting
-    # fmt: off
     BK_rate = (tauB * bV/(512*np.pi**3) * pK*qsq**2/Lambda**6 * 1/a
                * (abs(hS)**2 * (3 - 2*b2 + 3*b4)/4 * (mB*DEL_K/(mb - ms) * f0)**2)
               ) * limsK
-    # fmt: on
 
     return _rates(BK_rate)
 
@@ -287,8 +262,6 @@ def dBdqsq_BKPsiPsi(qsq, mPsi, Ci, Lambda=1, is_ident=False, a_vals=A_VALS_GRDV)
     aK_vals, _ = a_vals
     fp, f0, fT = fpf(qsq, aK_vals), f0f(qsq, aK_vals), fTf(qsq, aK_vals)
 
-    # Hand-aligned formula, excluded from automatic formatting
-    # fmt: off
     BK_rate = (tauB * 1/9 * bPsi/(24*np.pi**3) * pK*qsq**3/Lambda**8 * 1/a
                * (((abs(FVV)**2 * (15 - 15*b2 + 25*b4 - 9*b6)/16 + abs(FVA)**2 * b2 * (5 - 2*b2 + 5*b4)/8) * fp
                    + 2*np.real(FVV * (6*np.conjugate(FTT) * (15 - 10*b2 + 19*b4)/24
@@ -309,7 +282,6 @@ def dBdqsq_BKPsiPsi(qsq, mPsi, Ci, Lambda=1, is_ident=False, a_vals=A_VALS_GRDV)
                                          - 1/4*np.conjugate(FTtS) * b2 * omb2 * (-3 + 5*b2)/2)
                                  - 1/2*FTP*np.conjugate(FTtS) * b2 * omb2)) * (pK/(mB + mK) * fT)**2)
                  ) * limsK
-    # fmt: on
 
     return _rates(BK_rate)
 
@@ -327,12 +299,9 @@ def B_Bsphiphi(mphi, Ci, Lambda=1, is_ident=False):
     lims = lims_2body(mBs0, mphi, mphi)
     bphi = bX(mphi, mBs0**2)
 
-    # Hand-aligned formula, excluded from automatic formatting
-    # fmt: off
     Bs_rate = (tauBs * bphi/(16*np.pi) * fBs**2*mBs0/Lambda**2 * 1/a
                * (abs(gPS)**2 * (mBs0/(mb + ms))**2 )
               ) * lims
-    # fmt: on
 
     return Bs_rate
 
@@ -352,13 +321,10 @@ def B_Bspsipsi(mpsi, Ci, Lambda=1, is_ident=False):
     b2 = bpsi**2
     omb2 = 4 * mpsi**2 / mBs0**2  # = 1 - b2, without the cancellation as mpsi -> 0
 
-    # Hand-aligned formula, excluded from automatic formatting
-    # fmt: off
     Bs_rate = (tauBs * bpsi/(8*np.pi) * fBs**2*mBs0**3/Lambda**4 * (mBs0/(mb + ms))**2 * 1/a
                * (abs(fAA)**2 * omb2 * ((mb + ms)/mBs0)**2
                   + abs(fPS)**2 * b2 + abs(fPP)**2
                   - 4*np.real(fAA * np.conjugate(fPP)) * mpsi*(mb + ms)/mBs0**2)
               ) * lims
-    # fmt: on
 
     return Bs_rate

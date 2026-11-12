@@ -28,7 +28,7 @@ from lights.likelihoods import (
     profile_logLL_scan,
     profile_logLL_SM,
 )
-from lights.load_data import obs
+from lights.load_data import BelleII
 from lights.models import Model
 from lights.statistics import reduced_chisq
 
@@ -84,7 +84,7 @@ def test_SM_fit_regression():
     assert fit.error == pytest.approx(1.587, abs=0.01)
     assert -fit.delta_chi2 == pytest.approx(6.693, abs=0.01)
     _, _, m, _ = fit  # also unpacks as a tuple
-    assert reduced_chisq(m, obs) == pytest.approx(1.981, abs=0.01)
+    assert reduced_chisq(m, BelleII.obs) == pytest.approx(1.981, abs=0.01)
     assert profile_logLL_SM(logLL_BelleII, 0.0) == pytest.approx(10.37, abs=0.02)
     profile = profile_logLL_SM(logLL_BelleII, [0.0, fit.value])  # an array of mu in one call
     assert profile.shape == (2,)
@@ -134,7 +134,40 @@ def test_scan_minimum_is_close_to_zero():
 def test_reduced_chisq_counts_free_strengths():
     m_SM = min_logLL(logLL_BelleII).minuit
     m_NP = min_logLL(logLL_BelleII, GS).minuit
-    assert reduced_chisq(m_SM, obs) == pytest.approx(reduced_chisq(m_SM, obs, 1))
-    assert reduced_chisq(m_NP, obs) == pytest.approx(reduced_chisq(m_NP, obs, 1))  # x0 fixed, x1 free
+    assert reduced_chisq(m_SM, BelleII.obs) == pytest.approx(reduced_chisq(m_SM, BelleII.obs, 1))
+    assert reduced_chisq(m_NP, BelleII.obs) == pytest.approx(reduced_chisq(m_NP, BelleII.obs, 1))  # x0 fixed, x1 free
     m_free = _fit("BelleII", np_templates("BelleII", GS), _x_init("BelleII"), ["x2"])
-    assert reduced_chisq(m_free, obs) == pytest.approx(reduced_chisq(m_free, obs, 2))
+    assert reduced_chisq(m_free, BelleII.obs) == pytest.approx(reduced_chisq(m_free, BelleII.obs, 2))
+
+
+def test_experiment_names_and_functions_give_the_same_fit():
+    assert min_logLL("BelleII", GS).delta_chi2 == pytest.approx(min_logLL(logLL_BelleII, GS).delta_chi2, abs=1e-6)
+    with pytest.raises(ValueError, match="Unknown experiment"):
+        min_logLL("Belle", GS)
+
+
+def test_fit_leaves_the_zero_coupling_stationary_point():
+    # x = 0 is stationary (the strength is x^2); BaBar prefers this model slightly, which a fit
+    # started at x = 0 would not find
+    psi = Model("psipsi", 0.6, Lambda=1e4, CVL=1.0, CVR=1.0)
+    assert min_logLL("BaBar", psi).delta_chi2 < -1e-3
+
+
+def test_NP_fit_is_never_worse_than_the_SM():
+    # The SM is the x = 0 point of every NP model, so Delta chi^2 <= 0 up to the fit tolerance
+    for model in (GS, Model("V", 2.0, CVL=1e-8)):
+        assert min_logLL("BaBar", model).delta_chi2 < 5e-5
+
+
+def test_scan_of_selected_experiments():
+    psi = Model("psipsi", 0.6, Lambda=1e4, CVL=1.0, CVR=1.0)
+    res = profile_logLL_scan(psi, None, (-1, 1), (0, 0), pts=(3, 1), experiments=("BaBar", "LEP"), n_jobs=1)
+    assert res.BelleII is None and res.combined is None
+    assert res.BaBar.shape == (1, 3)
+    # LEP: relative to its own minimum. Vector currents give no Bs -> psi psi-bar, so LEP is flat at 0
+    assert psi.B_Bs() == 0 and np.all(res.LEP == 0)
+    pseudo = Model("psipsi", 0.6, Lambda=1e4, CSL=-1.0, CSR=1.0)  # pseudoscalar current: B_Bs > 0
+    res = profile_logLL_scan(pseudo, None, (0, 4), (0, 0), pts=(41, 1), experiments=("LEP",), n_jobs=1)
+    assert 0 <= res.LEP.min() < 0.01 and res.LEP.max() > 1
+    with pytest.raises(ValueError, match="Unknown experiment"):
+        profile_logLL_scan(psi, None, (-1, 1), (0, 0), experiments=("Belle",))

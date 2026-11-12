@@ -61,3 +61,10 @@ def test_plot_contours_without_a_contour_still_gives_a_handle():
     handles = plot_contours(ax, flat)  # BaBar never reaches Delta chi^2 = 2.3
     assert "BaBar" in handles and handles["BaBar"] is not None
     plt.close(fig)
+
+
+def test_plot_contours_skips_grids_that_were_not_computed():
+    full = toy_scan()
+    partial = ScanResult(None, full.BaBar, None, full.combined, full.x1, full.x2, full.models)
+    handles = plot_contours(plt.subplots()[1], partial, lep=True)
+    assert list(handles) == ["BaBar", "Combined"]

@@ -31,3 +31,6 @@ dev = [
 [tool.ruff]
 line-length = 120
 extend-exclude = ["notebooks"]
+
+[tool.ruff.format]
+exclude = ["src/lights/branching_fractions.py"]  # hand-aligned rate formulas

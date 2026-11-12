@@ -6,25 +6,7 @@ from iminuit import Minuit
 from joblib import Parallel, delayed
 from tqdm import tqdm
 
-from lights.load_data import (
-    Nbins,
-    Nbins_BaBar,
-    NiBs,
-    NinormB0Ks0,
-    b_BaBar_comb_K0,
-    b_BaBar_K0,
-    b_BaBar_K0_sigma,
-    b_BaBar_peak_K0,
-    b_charged,
-    b_cont,
-    b_neutral,
-    obs,
-    obs_BaBar_K0,
-    sigrecB0Ks0,
-    w_charged,
-    w_cont,
-    w_neutral,
-)
+from lights.load_data import BaBar, BelleII
 from lights.models import B_Bs, check_model
 from lights.signal_rates import (
     J_SM_BaBar,
@@ -37,6 +19,14 @@ from lights.signal_rates import (
     s_SM_BelleII,
     signal_template,
 )
+
+# The data, as module-level globals: numba compiles them into the likelihoods as constants
+Nbins, obs = BelleII.Nbins, BelleII.obs
+b_cont, b_charged, b_neutral = BelleII.b_cont, BelleII.b_charged, BelleII.b_neutral
+w_cont, w_charged, w_neutral = BelleII.w_cont, BelleII.w_charged, BelleII.w_neutral
+Nbins_BaBar, obs_BaBar = BaBar.Nbins, BaBar.obs
+b_peak_BaBar, b_comb_BaBar = BaBar.b_peak, BaBar.b_comb
+sigma_rec, sigma_NiB, sigma_Nnorm = BaBar.sigma_rec, BaBar.sigma_NiB, BaBar.sigma_Nnorm
 
 kwd = {"fastmath": {"reassoc", "contract", "arcp"}}
 
@@ -176,13 +166,13 @@ def _nll_grad_BelleII(mu, p, s_NP_1, s_NP_2, R_NP_1, R_NP_2):
 # Nuisance block p (length NPAR_BaBar), with U = NU_BaBar:
 #   p[0:U]          u           input nuisance params. (B -> K* form factors, efficiencies)
 #   p[U:U+Nb]       th_bkg      statistical background (MC) nuisance params.
-#   p[U+Nb]         rec         reconstruction nuisance param. (sigma sigrecB0Ks0)
-#   p[U+Nb+1]       NiB         peaking background nuisance param. (sigma NiBs)
-#   p[U+Nb+2]       Nnorm       background normalisation nuisance param. (sigma NinormB0Ks0)
+#   p[U+Nb]         rec         reconstruction nuisance param. (width sigma_rec)
+#   p[U+Nb+1]       NiB         peaking background nuisance param. (width sigma_NiB)
+#   p[U+Nb+2]       Nnorm       background normalisation nuisance param. (width sigma_Nnorm)
 NPAR_BaBar = NU_BaBar + Nbins_BaBar + 3
 
 # Gaussian weight of the relative background shifts th_bkg: (b / sigma_b)^2
-_mc_weight_BaBar = (b_BaBar_K0 / b_BaBar_K0_sigma) ** 2
+_mc_weight_BaBar = (BaBar.b_tot / BaBar.b_sigma) ** 2
 
 
 @nb.njit(**kwd)
@@ -197,7 +187,7 @@ def _model_BaBar(p, s_NP_1, s_NP_2, R_NP_1, R_NP_2):
     N, U = Nbins_BaBar, NU_BaBar
     sig = _signals(s_SM_BaBar, R_SM_BaBar, s_NP_1, s_NP_2, R_NP_1, R_NP_2, p[0:U])
     th, rec, NiB, Nnorm = p[U : U + N], p[U + N], p[U + N + 1], p[U + N + 2]
-    bkg = (1 + rec) * (1 + NiB) * b_BaBar_peak_K0 + b_BaBar_comb_K0
+    bkg = (1 + rec) * (1 + NiB) * b_peak_BaBar + b_comb_BaBar
     return sig, bkg, th, rec, NiB, Nnorm
 
 
@@ -208,8 +198,8 @@ def _nll_BaBar(mu, p, s_NP_1, s_NP_2, R_NP_1, R_NP_2):
     exp = (1 + rec) * _mix(mu, sig) + (1 + Nnorm) * (1 + th) * bkg
     u = p[0:NU_BaBar]
     penalty = u @ u + th @ (_mc_weight_BaBar * th)
-    penalty += (rec / sigrecB0Ks0) ** 2 + (NiB / NiBs) ** 2 + (Nnorm / NinormB0Ks0) ** 2
-    return _poisson(exp, obs_BaBar_K0) + penalty
+    penalty += (rec / sigma_rec) ** 2 + (NiB / sigma_NiB) ** 2 + (Nnorm / sigma_Nnorm) ** 2
+    return _poisson(exp, obs_BaBar) + penalty
 
 
 @nb.njit(**kwd)
@@ -219,16 +209,16 @@ def _nll_grad_BaBar(mu, p, s_NP_1, s_NP_2, R_NP_1, R_NP_2):
     sig, bkg, th, rec, NiB, Nnorm = _model_BaBar(p, s_NP_1, s_NP_2, R_NP_1, R_NP_2)
     signal = _mix(mu, sig)
     shift = (1 + Nnorm) * (1 + th)
-    g = 2 * (1 - obs_BaBar_K0 / ((1 + rec) * signal + shift * bkg))
+    g = 2 * (1 - obs_BaBar / ((1 + rec) * signal + shift * bkg))
 
     d_p = np.empty(NPAR_BaBar)
     d_p[0:U] = (1 + rec) * (
         R_SM_BaBar.T @ (g * mu[0] * sig[0]) + R_NP_1.T @ (g * mu[1] * sig[1]) + R_NP_2.T @ (g * mu[2] * sig[2])
     ) + 2 * p[0:U]
     d_p[U : U + N] = g * (1 + Nnorm) * bkg + 2 * _mc_weight_BaBar * th
-    d_p[U + N] = g @ signal + g @ (shift * (1 + NiB) * b_BaBar_peak_K0) + 2 * rec / sigrecB0Ks0**2
-    d_p[U + N + 1] = g @ (shift * (1 + rec) * b_BaBar_peak_K0) + 2 * NiB / NiBs**2
-    d_p[U + N + 2] = g @ ((1 + th) * bkg) + 2 * Nnorm / NinormB0Ks0**2
+    d_p[U + N] = g @ signal + g @ (shift * (1 + NiB) * b_peak_BaBar) + 2 * rec / sigma_rec**2
+    d_p[U + N + 1] = g @ (shift * (1 + rec) * b_peak_BaBar) + 2 * NiB / sigma_NiB**2
+    d_p[U + N + 2] = g @ ((1 + th) * bkg) + 2 * Nnorm / sigma_Nnorm**2
     return (1 + rec) * np.array((sig[0] @ g, sig[1] @ g, sig[2] @ g)), d_p
 
 
@@ -349,8 +339,8 @@ def components_BaBar(x, s_NP_1=None, s_NP_2=None, R_NP_1=None, R_NP_2=None):
         "SM": (1 + rec) * mu[0] * sig[0],
         "NP_1": (1 + rec) * mu[1] * sig[1],
         "NP_2": (1 + rec) * mu[2] * sig[2],
-        "peak": shift * (1 + rec) * (1 + NiB) * b_BaBar_peak_K0,
-        "comb": shift * b_BaBar_comb_K0,
+        "peak": shift * (1 + rec) * (1 + NiB) * b_peak_BaBar,
+        "comb": shift * b_comb_BaBar,
     }
 
 
@@ -360,21 +350,22 @@ _NU = {"BelleII": NU_BelleII, "BaBar": NU_BaBar}
 _NPAR = {"BelleII": 3 + NPAR_BelleII, "BaBar": 3 + NPAR_BaBar, "Combined": 3 + NPAR_BelleII + NPAR_BaBar}
 _LOGLL = {"BelleII": logLL_BelleII, "BaBar": logLL_BaBar, "Combined": logLL_Combined}
 _GRAD = {"BelleII": grad_BelleII, "BaBar": grad_BaBar, "Combined": grad_Combined}
-_KIND_BY_NAME = {"logLL_BelleII": "BelleII", "logLL_BaBar": "BaBar", "logLL_Combined": "Combined"}
+_KIND_BY_NAME = {"logLL_BelleII": "BelleII", "logLL_BaBar": "BaBar"}
 
 
-def _kind_of(logLL):
-    """Experiment ("BelleII", "BaBar", "Combined") of a likelihood function.
+def _kind_of(experiment):
+    """Experiment name ("BelleII" or "BaBar") of an experiment name or likelihood function.
 
-    Looked up by function name, not object identity: joblib workers receive a pickled copy
-    of the function, which is a different object from the module-level one.
+    Functions are looked up by name, not object identity: joblib workers receive a pickled
+    copy of the function, which is a different object from the module-level one.
     """
-    if isinstance(logLL, str) and logLL in _LOGLL:
-        return logLL
-    name = getattr(logLL, "__name__", None)
-    if name not in _KIND_BY_NAME:
-        raise ValueError(f"Unknown likelihood {logLL!r}; expected logLL_BelleII, logLL_BaBar or logLL_Combined")
-    return _KIND_BY_NAME[name]
+    if isinstance(experiment, str):
+        name = experiment
+    else:
+        name = _KIND_BY_NAME.get(getattr(experiment, "__name__", None))
+    if name not in ("BelleII", "BaBar"):
+        raise ValueError(f'Unknown experiment {experiment!r}; expected "BelleII" or "BaBar"')
+    return name
 
 
 _Z_LIM = (-5.0, 5.0)  # unit-Gaussian background modes z (b + w z stays positive)
@@ -432,7 +423,7 @@ class _ScanGrids(NamedTuple):
 
 
 class ScanResult(_ScanGrids):
-    """Delta chi^2 grids of profile_logLL_scan, indexed [x2, x1]; also unpacks as a 4-tuple.
+    """Delta chi^2 grids of profile_logLL_scan, indexed [x2, x1] (None if not computed); also unpacks as a 4-tuple.
 
     Besides the four grids (BelleII, BaBar, LEP, combined) it records the scan itself:
     x1, x2: the coupling multipliers of the grid; models: (model_1, model_2).
@@ -462,6 +453,9 @@ def _limits(kind):
     return head + {"BelleII": belle, "BaBar": babar, "Combined": belle + babar}[kind]
 
 
+N_START_EVENTS = 10.0  # expected NP signal events at the start of a fit with free couplings
+
+
 def _fit(kind, templates, x_init, fixed, extra=None, errors=False):
     """Run one Migrad fit and return the Minuit object.
 
@@ -469,7 +463,8 @@ def _fit(kind, templates, x_init, fixed, extra=None, errors=False):
     "Combined" the Belle II ones followed by the BaBar ones). extra = (f, grad) is an optional
     term added to the likelihood (e.g. LEP), with its gradient. The analytic gradient is
     passed to Migrad, which runs with strategy 0: the minimum is found with far fewer calls
-    because no numerical error matrix is built along the way. Set errors = True to run Hesse
+    because no numerical error matrix is built along the way. Free couplings starting at 0
+    are moved off that stationary point (see N_START_EVENTS). Set errors = True to run Hesse
     afterwards when parameter uncertainties are needed. A free NP coupling whose templates are all zero
     does not affect the likelihood and is fixed, to keep the Hesse matrix non-singular.
     """
@@ -483,19 +478,23 @@ def _fit(kind, templates, x_init, fixed, extra=None, errors=False):
         func = lambda x: logLL(x, *templates) + f_extra(x)
         gfunc = lambda x: grad(x, *templates) + g_extra(x)
 
-    s_NP = templates[0::4] + templates[1::4]  # (s_NP_1 of each experiment, s_NP_2 of each)
-    n_exp = len(templates) // 4
-    flat = [
-        f"x{k}"
-        for k in (1, 2)
-        if f"x{k}" not in fixed and not any(np.any(s) for s in s_NP[(k - 1) * n_exp : k * n_exp])
-    ]
+    # Expected NP events at unit coupling, summed over the experiments, for x1 and x2
+    n_events = [sum(float(np.sum(s)) for s in templates[k - 1 :: 4]) for k in (1, 2)]
+    flat = [f"x{k}" for k in (1, 2) if f"x{k}" not in fixed and n_events[k - 1] == 0]
 
-    m = Minuit(func, np.asarray(x_init, dtype=float), grad=gfunc)
+    # The NP strengths are x1^2 and x2^2, so x = 0 is a stationary point where Migrad can stop
+    # without moving. A free coupling starting at 0 starts at N_START_EVENTS expected events instead.
+    x_init = np.array(x_init, dtype=float)
+    for k in (1, 2):
+        if f"x{k}" not in fixed and f"x{k}" not in flat and x_init[k] == 0:
+            x_init[k] = np.sqrt(N_START_EVENTS / n_events[k - 1])
+
+    m = Minuit(func, x_init, grad=gfunc)
     m.errordef = 1.0
     m.limits = _limits(kind)
     m.fixed[list(fixed) + flat] = True
     m.strategy = 0
+    m.tol = 0.01  # EDM < 2e-5: Delta chi^2 accurate to ~1e-5 (the default 0.1 left up to ~1e-4)
     m.migrad(ncall=100000)
     if errors:
         m.hesse()
@@ -528,13 +527,13 @@ def _normalise(tpl, target=100.0):
     return (out_s[0], out_s[1], out_J[0], out_J[1]), scales
 
 
-def min_logLL(logLL, model_1=None, model_2=None):
+def min_logLL(experiment, model_1=None, model_2=None):
     """Minimise the log likelihood w.r.t. the SM signal strength or NP couplings and the nuisance parameters.
 
-    logLL:     logLL_BelleII or logLL_BaBar, which selects the experiment
-    model_1/2: NP Models whose couplings are scaled by the fitted multipliers x1, x2
-               (signal strengths x1^2, x2^2). With no model, the SM signal strength mu_SM is
-               fitted; with one or two models, mu_SM = 1 and x1 (and x2) are fitted.
+    experiment: "BelleII" or "BaBar" (or the likelihood function logLL_BelleII / logLL_BaBar)
+    model_1/2:  NP Models whose couplings are scaled by the fitted multipliers x1, x2
+                (signal strengths x1^2, x2^2). With no model, the SM signal strength mu_SM is
+                fitted; with one or two models, mu_SM = 1 and x1 (and x2) are fitted.
 
     Returns a FitResult (value, error, minuit, delta_chi2): mu_SM, or the coupling
     multiplier(s) of the model(s), with delta_chi2 relative to the SM (mu_SM = 1, no NP). The
@@ -546,7 +545,7 @@ def min_logLL(logLL, model_1=None, model_2=None):
     if model_1 is None and model_2 is not None:
         raise ValueError("Pass a single NP model as model_1")
     NP = (model_1 is not None) + (model_2 is not None)
-    kind = _kind_of(logLL)
+    kind = _kind_of(experiment)
 
     tpl = np_templates(kind, model_1, model_2)
     tpl, scales = _normalise(tpl)
@@ -568,13 +567,14 @@ def min_logLL(logLL, model_1=None, model_2=None):
     return FitResult(value, error, m, delta_chi2)
 
 
-def profile_logLL_SM(logLL, mu):
+def profile_logLL_SM(experiment, mu):
     """Profile -2 Delta ln L of the SM signal strength mu (a number or an array of them).
 
+    experiment: "BelleII" or "BaBar" (or the likelihood function logLL_BelleII / logLL_BaBar).
     At each mu the nuisance params. are fitted; the result is relative to the global minimum,
     where mu is fitted too (computed once).
     """
-    kind = _kind_of(logLL)
+    kind = _kind_of(experiment)
     tpl = np_templates(kind)
     global_min = _fit(kind, tpl, _x_init(kind), ["x1", "x2"]).fval
     profile = [_fit(kind, tpl, _x_init(kind, (m, 0.0, 0.0)), ["x0", "x1", "x2"]).fval for m in np.ravel(mu)]
@@ -587,82 +587,78 @@ def _lep_term(Br_LEP):
     return (lambda x: logLL_LEP(x, B1, B2), lambda x: grad_LEP(x, B1, B2))
 
 
-def _profile_point(c1, c2, sig, templates, global_mins, Br_LEP):
-    """Profile log-likelihood at ONE (x1, x2) grid point. This runs inside a worker."""
+SCAN_EXPERIMENTS = ("BelleII", "BaBar", "LEP", "combined")  # the grids of a ScanResult
+_SCAN_KIND = {"BelleII": "BelleII", "BaBar": "BaBar", "combined": "Combined"}  # likelihood of each fitted grid
+
+
+def _lep_min(Br_LEP):
+    """Minimum of logLL_LEP over the couplings: the branching fraction N_norm * Br can take any
+    value >= 0 if a model has a Bs -> invisible rate, else only 0."""
+    Br = max(LEP_mu / LEP_N_norm, 0.0) if max(Br_LEP) > 0 else 0.0
+    return (LEP_N_norm * Br - LEP_mu) ** 2 / LEP_sigma**2
+
+
+def _profile_point(c1, c2, experiments, templates, global_mins, Br_LEP):
+    """Profile -2 Delta ln L of each experiment at ONE (x1, x2) grid point. This runs inside a worker."""
     head = (1.0, c1, c2)
-    fix = ["x0", "x1", "x2"]
-    res = np.zeros(4)  # [BelleII, BaBar, LEP, Combined]
-
-    # Belle II
-    if sig[0] == 1:
-        res[0] = _fit("BelleII", templates["BelleII"], _x_init("BelleII", head), fix).fval - global_mins[0]
-
-    # BaBar
-    if sig[1] == 1:
-        res[1] = _fit("BaBar", templates["BaBar"], _x_init("BaBar", head), fix).fval - global_mins[1]
-
-    # LEP (needed for both the LEP-only and the combined result)
-    if sig[2] == 1 or sig[3] == 1:
-        lep = logLL_LEP(np.array(head), float(Br_LEP[0]), float(Br_LEP[1]))
-        if sig[2] == 1:
-            res[2] = lep - global_mins[2]
-
-    # Combined
-    if sig[3] == 1:
-        res[3] = _fit("Combined", templates["Combined"], _x_init("Combined", head), fix).fval + lep - global_mins[3]
-
+    lep = logLL_LEP(np.array(head), float(Br_LEP[0]), float(Br_LEP[1]))
+    res = []
+    for name in experiments:
+        if name == "LEP":
+            res.append(lep - global_mins[name])
+            continue
+        kind = _SCAN_KIND[name]
+        fval = _fit(kind, templates[kind], _x_init(kind, head), ["x0", "x1", "x2"]).fval
+        res.append(fval + (lep if name == "combined" else 0.0) - global_mins[name])
     return res
 
 
-def profile_logLL_scan(model_1, model_2, lims_1, lims_2, *, pts=(100, 100), sig=(1, 1, 1, 1), n_jobs=-1):
+def profile_logLL_scan(model_1, model_2, lims_1, lims_2, *, pts=(100, 100), experiments=SCAN_EXPERIMENTS, n_jobs=-1):
     """Profile log likelihood on a grid of the coupling multipliers of two NP Models (parallel over the grid).
 
-    The couplings of model_1 and model_2 are scaled by x1 in lims_1 and x2 in lims_2 (pts
-    points each); the two models may be different channels or masses. sig selects which of
-    [Belle II, BaBar, LEP, combined] to compute. Returns a ScanResult of the four Delta chi^2
-    grids (BelleII, BaBar, LEP, combined), indexed [x2, x1].
+    The couplings of model_1 and model_2 (None: no second model) are scaled by x1 in lims_1
+    and x2 in lims_2 (pts points each); the two models may be different channels or masses.
+    experiments: which of "BelleII", "BaBar", "LEP" and "combined" (all three) to compute.
+
+    Returns a ScanResult of the Delta chi^2 grids (BelleII, BaBar, LEP, combined), indexed
+    [x2, x1], each relative to its own global minimum; grids not computed are None.
     """
     check_model(model_1, "model_1", allow_none=False)
     check_model(model_2, "model_2")
+    unknown = set(experiments) - set(SCAN_EXPERIMENTS)
+    if unknown:
+        raise ValueError(f"Unknown experiment(s) {sorted(unknown)}; choose from {SCAN_EXPERIMENTS}")
+    experiments = [name for name in SCAN_EXPERIMENTS if name in experiments]
 
     # ---- Signal templates (computed once, shared by every grid point) ----
     tpl_BelleII = np_templates("BelleII", model_1, model_2)
     tpl_BaBar = np_templates("BaBar", model_1, model_2)
     templates = {"BelleII": tpl_BelleII, "BaBar": tpl_BaBar, "Combined": tpl_BelleII + tpl_BaBar}
-
     Br_LEP = (B_Bs(model_1), B_Bs(model_2))
 
-    # ---- Global minima (only 3 fits, done serially) ----
-    global_mins = [0.0, 0.0, 0.0, 0.0]  # [BelleII, BaBar, LEP, Combined]
-    if sig[0] == 1:
-        global_mins[0] = _fit("BelleII", tpl_BelleII, _x_init("BelleII"), ["x0"]).fval
-    if sig[1] == 1:
-        global_mins[1] = _fit("BaBar", tpl_BaBar, _x_init("BaBar"), ["x0"]).fval
-    if sig[2] == 1:
-        global_mins[2] = 0
-    if sig[3] == 1:
+    # ---- Global minima (one fit per experiment, done serially) ----
+    global_mins = {}
+    for name in experiments:
+        if name == "LEP":
+            global_mins[name] = _lep_min(Br_LEP)
+            continue
+        kind = _SCAN_KIND[name]
         # The profiled combined values include the LEP term, so the global minimum must too
-        global_mins[3] = _fit(
-            "Combined", templates["Combined"], _x_init("Combined"), ["x0"], extra=_lep_term(Br_LEP)
-        ).fval
+        extra = _lep_term(Br_LEP) if name == "combined" else None
+        global_mins[name] = _fit(kind, templates[kind], _x_init(kind), ["x0"], extra=extra).fval
 
     # ---- Profiled scan, parallel over the (x1, x2) grid ----
     x1_vals = np.linspace(lims_1[0], lims_1[1], pts[0])
     x2_vals = np.linspace(lims_2[0], lims_2[1], pts[1])
     n1, n2 = len(x1_vals), len(x2_vals)
 
-    jobs = (delayed(_profile_point)(c1, c2, sig, templates, global_mins, Br_LEP) for c1 in x1_vals for c2 in x2_vals)
-
+    jobs = (
+        delayed(_profile_point)(c1, c2, experiments, templates, global_mins, Br_LEP) for c1 in x1_vals for c2 in x2_vals
+    )
     gen = Parallel(n_jobs=n_jobs, return_as="generator")(jobs)
     results = np.array(list(tqdm(gen, total=n1 * n2, desc=f"{model_1.channel.name}, mX = {model_1.mX:.3g}")))
 
-    # results is ordered (i over x1, j over x2) -> reshape, then transpose to [j, i]
-    results = results.reshape(n1, n2, 4)
-    LL_vals_BelleII = results[:, :, 0].T
-    LL_vals_BaBar = results[:, :, 1].T
-    LL_vals_LEP = results[:, :, 2].T
-    LL_vals_Combined = results[:, :, 3].T
-
-    return ScanResult(
-        LL_vals_BelleII, LL_vals_BaBar, LL_vals_LEP, LL_vals_Combined, x1_vals, x2_vals, (model_1, model_2)
-    )
+    # results is ordered (i over x1, j over x2): reshape, then transpose each grid to [j, i]
+    results = results.reshape(n1, n2, len(experiments))
+    grids = {name: results[:, :, i].T for i, name in enumerate(experiments)}
+    return ScanResult(*(grids.get(name) for name in SCAN_EXPERIMENTS), x1_vals, x2_vals, (model_1, model_2))

@@ -1,10 +1,16 @@
-"""Experimental inputs: Belle II (B+ -> K+ E_miss, ITA) and BaBar (B0 -> K*0 E_miss)."""
+"""Experimental inputs: Belle II (B+ -> K+ E_miss, ITA) and BaBar (B0 -> K*0 E_miss).
+
+The data of each experiment is grouped in one object, BelleII or BaBar (see BelleIIData and
+BaBarData for the fields), e.g. BelleII.obs, BaBar.eff_vals. All q^2 values are in GeV^2.
+"""
 
 import json
+from dataclasses import dataclass
 
 import numpy as np
 from scipy.interpolate import RectBivariateSpline
 
+from .constants import NB, mB
 from .paths import BTOKEMISS_DIR as DATA_DIR  # Belle II and BaBar inputs
 
 
@@ -40,96 +46,188 @@ def factorise(C, rtol=1e-6):
     return np.ascontiguousarray(U * np.where(keep, np.sqrt(np.abs(lam)), 0.0))
 
 
-### Belle-II B+ -> K+ Inclusive Data ###
-Nbins = 20
-bins = np.arange(-1, 21)[: Nbins + 1]
-bin_cents = (bins[1:] + bins[:-1]) / 2
-bw = (bins[1] - bins[0]) / 2
-
-b_cont = load(DATA_DIR / "bkg_inc_cont.txt")[:Nbins]
-b_charged = load(DATA_DIR / "bkg_inc_charged.txt")[:Nbins]
-b_neutral = load(DATA_DIR / "bkg_inc_neutral.txt")[:Nbins]
-b_errors = load(DATA_DIR / "errors_inc.txt")[:Nbins]
-_b_tot = b_cont + b_charged + b_neutral
-
-# Background MC uncertainties, uncorrelated between bins: each background gets its share
-# of the total error, w_k = b_errors * sqrt(b_k/b_tot), so that the w_k add in quadrature
-# to b_errors. In the likelihood the shift is w_k * z_k with z_k ~ N(0, 1).
-w_cont = b_errors * np.sqrt(b_cont / _b_tot)
-w_charged = b_errors * np.sqrt(b_charged / _b_tot)
-w_neutral = b_errors * np.sqrt(b_neutral / _b_tot)
-
-obs = load(DATA_DIR / "obs_inc.txt")[:Nbins]
-
-# Belle II's published profile likelihood of the SM signal strength (ITA); columns mu, -2 Delta ln L
-ita_profile = load_json(DATA_DIR / "ITALikelihoodPoints_PDF.json")
-
-# Efficiencies [%] per 2 GeV^2 bin, rows: value, lower and upper uncertainty (inclusive and hadronic tag)
-eff_data = load_json(DATA_DIR / "SignalEfficiency.json")
-effHad_data = load_json(DATA_DIR / "SignalEfficiency_HAD.json")
-
-eff_bins = np.arange(0, 24 + 2, 2)
-eff_bin_cents = (eff_bins[1:] + eff_bins[:-1]) / 2.0
-
-eff_vals = eff_data[0] / 100.0
-eff_sigma = 1 / 100.0 * (eff_data[2] - eff_data[1]) / 2.0
-eff_cov = np.diag(eff_sigma**2)
-
-effHad_vals = effHad_data[0] / 100.0
-
-
 def eff_vals_gen(Ntoys, eff_vals, eff_cov, rng=None):
-    """Generates random values for efficiencies.
+    """Random efficiency values, Gaussian with mean eff_vals and covariance eff_cov.
 
     rng: a seed or numpy.random.Generator, for reproducible toys (None: fresh randomness).
     """
-    eff_vals_r = np.random.default_rng(rng).multivariate_normal(eff_vals, eff_cov, size=Ntoys)
-
-    return eff_vals_r
+    return np.random.default_rng(rng).multivariate_normal(eff_vals, eff_cov, size=Ntoys)
 
 
-# Smearing
-# Smearing map: rows true q^2, columns reconstructed q^2, 1 GeV^2 bins from -5 to 25 GeV^2
-smearing_data = load(DATA_DIR / "q2SmearingMapq2genvsq2rec.txt")
+def _bins(edges):
+    "Bin edges, centres and half width of equal-width bins."
+    return edges, (edges[1:] + edges[:-1]) / 2, (edges[1] - edges[0]) / 2
+
+
+### Belle II B+ -> K+ E_miss, inclusive tag ###
+@dataclass(frozen=True, eq=False)
+class BelleIIData:
+    """Belle II B+ -> K+ E_miss data, inclusive tag analysis (ITA).
+
+    NB:             number of BB-bar pairs (the factor 2 f(+-) for signal-side B+ mesons is
+                    assumed to be absorbed in the efficiencies)
+    Nbins, bins, bin_cents, bw:  number, edges, centres and half width of the reconstructed q^2 bins
+    obs:            observed events per bin
+    b_cont, b_charged, b_neutral:  expected backgrounds (continuum, B+B-, B0B0-bar) per bin
+    b_errors:       total MC uncertainty of the background per bin
+    w_cont, w_charged, w_neutral:  each background's share of b_errors (they add in quadrature
+                    to b_errors); in the likelihood the shift is w_k z_k with z_k ~ N(0, 1)
+    eff_bins, eff_bin_cents:  true-q^2 bins of the signal efficiency
+    eff_vals, eff_sigma, eff_cov:  signal efficiency, its uncertainty and (diagonal) covariance
+    effHad_vals:    signal efficiency of the hadronic tag analysis (for comparison only)
+    smearing_data:  q^2 smearing map, rows true q^2, columns reconstructed q^2, 1 GeV^2 bins
+                    from -5 to 25 GeV^2 (see smearing() for the interpolated density)
+    ita_profile:    published profile likelihood of the SM signal strength, columns mu, -2 Delta ln L
+    """
+
+    NB: float
+    Nbins: int
+    bins: np.ndarray
+    bin_cents: np.ndarray
+    bw: float
+    obs: np.ndarray
+    b_cont: np.ndarray
+    b_charged: np.ndarray
+    b_neutral: np.ndarray
+    b_errors: np.ndarray
+    w_cont: np.ndarray
+    w_charged: np.ndarray
+    w_neutral: np.ndarray
+    eff_bins: np.ndarray
+    eff_bin_cents: np.ndarray
+    eff_vals: np.ndarray
+    eff_sigma: np.ndarray
+    eff_cov: np.ndarray
+    effHad_vals: np.ndarray
+    smearing_data: np.ndarray
+    ita_profile: np.ndarray
+
+
+def _load_BelleII(Nbins=20):
+    bins, bin_cents, bw = _bins(np.arange(-1.0, 21.0)[: Nbins + 1])
+
+    b_cont = load(DATA_DIR / "bkg_inc_cont.txt")[:Nbins]
+    b_charged = load(DATA_DIR / "bkg_inc_charged.txt")[:Nbins]
+    b_neutral = load(DATA_DIR / "bkg_inc_neutral.txt")[:Nbins]
+    b_errors = load(DATA_DIR / "errors_inc.txt")[:Nbins]
+    b_tot = b_cont + b_charged + b_neutral
+
+    # Efficiencies [%] per 2 GeV^2 bin, rows: value, lower and upper uncertainty (inclusive and hadronic tag)
+    eff_data = load_json(DATA_DIR / "SignalEfficiency.json")
+    effHad_data = load_json(DATA_DIR / "SignalEfficiency_HAD.json")
+    eff_bins, eff_bin_cents, _ = _bins(np.arange(0.0, 24.0 + 2, 2))
+    eff_sigma = 1 / 100.0 * (eff_data[2] - eff_data[1]) / 2.0
+
+    return BelleIIData(
+        NB=NB,
+        Nbins=Nbins,
+        bins=bins,
+        bin_cents=bin_cents,
+        bw=bw,
+        obs=load(DATA_DIR / "obs_inc.txt")[:Nbins],
+        b_cont=b_cont,
+        b_charged=b_charged,
+        b_neutral=b_neutral,
+        b_errors=b_errors,
+        w_cont=b_errors * np.sqrt(b_cont / b_tot),
+        w_charged=b_errors * np.sqrt(b_charged / b_tot),
+        w_neutral=b_errors * np.sqrt(b_neutral / b_tot),
+        eff_bins=eff_bins,
+        eff_bin_cents=eff_bin_cents,
+        eff_vals=eff_data[0] / 100.0,
+        eff_sigma=eff_sigma,
+        eff_cov=np.diag(eff_sigma**2),
+        effHad_vals=effHad_data[0] / 100.0,
+        smearing_data=load(DATA_DIR / "q2SmearingMapq2genvsq2rec.txt"),
+        ita_profile=load_json(DATA_DIR / "ITALikelihoodPoints_PDF.json"),
+    )
+
+
+BelleII = _load_BelleII()
+
+# Quadratic spline through the smearing map (1 GeV^2 bins centred at -4.5 ... 24.5), built once
 _smearing_bin_cents = np.linspace(-4.5, 24.5, 30)
-
-# Quadratic spline through the smearing map, built once
-_smearing_interp = RectBivariateSpline(_smearing_bin_cents, _smearing_bin_cents, smearing_data.T, kx=2, ky=2)
+_smearing_interp = RectBivariateSpline(_smearing_bin_cents, _smearing_bin_cents, BelleII.smearing_data.T, kx=2, ky=2)
 
 
-def sm(qsqrec, qsqtrue):
-    """Smearing interpolation function for Belle II (probability density in q2_rec, clipped at 0)."""
+def smearing(qsqrec, qsqtrue):
+    """Belle II q^2 smearing: probability density in reconstructed q^2 for each true q^2 (clipped at 0).
+
+    qsqrec and qsqtrue are ascending arrays (or numbers); returns shape (len(qsqrec), len(qsqtrue)).
+    """
     return np.maximum(_smearing_interp(qsqrec, qsqtrue), 0)
 
 
-### BaBar B0 -> K*0 data ###
-# Number of BB-bar pairs at BaBar. The number of signal-side B0 mesons would be
-# 2 * f(00) * NB_BaBar; that factor is assumed to be absorbed in the signal efficiencies.
-NB_BaBar = 471e6
+### BaBar B0 -> K*0 E_miss ###
+@dataclass(frozen=True, eq=False)
+class BaBarData:
+    """BaBar B0 -> K*0 E_miss data (no q^2 smearing).
 
-Nbins_BaBar = 7
-bins_BaBar = np.linspace(0, 0.7, 8)[: Nbins_BaBar + 1]
-bin_cents_BaBar = (bins_BaBar[1:] + bins_BaBar[:-1]) / 2
-bw_BaBar = (bins_BaBar[1] - bins_BaBar[0]) / 2
+    NB:             number of BB-bar pairs (the factor 2 f(00) for signal-side B0 mesons is
+                    assumed to be absorbed in the efficiencies)
+    Nbins, bins, bin_cents, bw:  number, edges, centres and half width of the q^2 bins
+                    (0.1 mB^2 wide, from 0 to 0.7 mB^2)
+    obs:            observed events per bin
+    b_tot, b_comb, b_peak:  expected total, combinatorial and peaking backgrounds per bin
+    mc_factor:      ratio of MC to data statistics of the background
+    b_sigma:        MC statistical uncertainty of b_tot, sqrt(b_tot / mc_factor)
+    sigma_rec, sigma_NiB, sigma_Nnorm:  relative uncertainties of the reconstruction
+                    efficiency, the peaking background and the background normalisation
+    eff_bin_cents:  q^2 at which the signal efficiency is given (the bin centres)
+    eff_vals, eff_sigma, eff_cov:  signal efficiency, its uncertainty and (diagonal) covariance
+    """
+
+    NB: float
+    Nbins: int
+    bins: np.ndarray
+    bin_cents: np.ndarray
+    bw: float
+    obs: np.ndarray
+    b_tot: np.ndarray
+    b_comb: np.ndarray
+    b_peak: np.ndarray
+    mc_factor: float
+    b_sigma: np.ndarray
+    sigma_rec: float
+    sigma_NiB: float
+    sigma_Nnorm: float
+    eff_bin_cents: np.ndarray
+    eff_vals: np.ndarray
+    eff_sigma: np.ndarray
+    eff_cov: np.ndarray
 
 
-sigrecB0Ks0 = 0.086
-NiBs = 0.028
-NinormB0Ks0 = 0.066
-MCFactorBack = 7.6
+def _load_BaBar(Nbins=7):
+    bins, bin_cents, bw = _bins(np.linspace(0, 0.7, 8)[: Nbins + 1] * mB**2)
 
-b_BaBar_K0 = load_json(DATA_DIR / "PeakBackgroundBabarB0Ks0_PDF.json")[:Nbins_BaBar]  # total background
-b_BaBar_comb_K0 = load_json(DATA_DIR / "CombBackgroundBabarB0Ks0_PDF.json")[:Nbins_BaBar]
-b_BaBar_peak_K0 = b_BaBar_K0 - b_BaBar_comb_K0
-b_BaBar_K0_sigma = np.sqrt(b_BaBar_K0 / MCFactorBack)  # MC statistical uncertainty
+    b_tot = load_json(DATA_DIR / "PeakBackgroundBabarB0Ks0_PDF.json")[:Nbins]
+    b_comb = load_json(DATA_DIR / "CombBackgroundBabarB0Ks0_PDF.json")[:Nbins]
+    mc_factor = 7.6
 
-obs_BaBar_K0 = load_json(DATA_DIR / "RateBaBarB0Ks0_PDF.json")[0][:Nbins_BaBar]
+    # Efficiencies per bin, rows: value, lower and upper uncertainty
+    eff_data = load_json(DATA_DIR / "EfficiencyB0toKs0BaBar_PDF.json")[:, :Nbins] * 8 * 1e-4
+    eff_sigma = (eff_data[1] + eff_data[2]) / 2
 
-# Efficiencies
-eff_bins_BaBar = np.linspace(0, 0.7, 8)
-eff_bin_cents_BaBar = (eff_bins_BaBar[1:] + eff_bins_BaBar[:-1]) / 2
+    return BaBarData(
+        NB=471e6,
+        Nbins=Nbins,
+        bins=bins,
+        bin_cents=bin_cents,
+        bw=bw,
+        obs=load_json(DATA_DIR / "RateBaBarB0Ks0_PDF.json")[0][:Nbins],
+        b_tot=b_tot,
+        b_comb=b_comb,
+        b_peak=b_tot - b_comb,
+        mc_factor=mc_factor,
+        b_sigma=np.sqrt(b_tot / mc_factor),
+        sigma_rec=0.086,
+        sigma_NiB=0.028,
+        sigma_Nnorm=0.066,
+        eff_bin_cents=bin_cents,
+        eff_vals=eff_data[0],
+        eff_sigma=eff_sigma,
+        eff_cov=np.diag(eff_sigma**2),
+    )
 
-eff_BaBar_K0_data = load_json(DATA_DIR / "EfficiencyB0toKs0BaBar_PDF.json") * 8 * 1e-4
-eff_BaBar_K0_vals = eff_BaBar_K0_data[0]
-eff_BaBar_K0_sigma = (eff_BaBar_K0_data[1] + eff_BaBar_K0_data[2]) / 2
-eff_BaBar_K0_cov = np.diag(eff_BaBar_K0_sigma**2)
+
+BaBar = _load_BaBar()

@@ -5,16 +5,7 @@ import pytest
 from scipy.integrate import simpson
 
 from lights.constants import mB
-from lights.load_data import (
-    bin_cents,
-    bin_cents_BaBar,
-    bw,
-    bw_BaBar,
-    eff_BaBar_K0_cov,
-    eff_BaBar_K0_vals,
-    eff_cov,
-    eff_vals,
-)
+from lights.load_data import BaBar, BelleII
 from lights.models import Model
 from lights.signal_rates import (
     Nrec_BaBar,
@@ -37,16 +28,16 @@ CASES = [
 def dense_BelleII(model, include_SM, n=201):
     "Smear, then integrate each reconstructed bin with n points."
     out = []
-    for b in bin_cents:
-        q = np.linspace(b - bw, b + bw, n)
+    for lo, hi in zip(BelleII.bins[:-1], BelleII.bins[1:]):
+        q = np.linspace(lo, hi, n)
         out.append(simpson(dNdqsqrec_BelleII(q, model, include_SM=include_SM), x=q))
     return np.array(out)
 
 
 def dense_BaBar(model, include_SM, n=2001):
     out = []
-    for b in bin_cents_BaBar:
-        q = np.linspace(max(b - bw_BaBar, 1e-5), b + bw_BaBar, n) * mB**2
+    for lo, hi in zip(BaBar.bins[:-1], BaBar.bins[1:]):
+        q = np.linspace(max(lo, 1e-5 * mB**2), hi, n)
         out.append(simpson(dNdqsqrec_BaBar(q, model, include_SM=include_SM), x=q))
     return np.array(out)
 
@@ -70,7 +61,7 @@ def test_Nrec_BaBar_matches_dense_integration(case):
 
 def test_two_body_signal_lands_in_its_bin():
     s = Nrec_BaBar(Model("phi", 2.1, CSL=-1e-8, CSR=1e-8))
-    k = np.argmin(np.abs(bin_cents_BaBar * mB**2 - 2.1**2))
+    k = np.argmin(np.abs(BaBar.bin_cents - 2.1**2))
     assert s[k] > 0 and np.all(np.delete(s, k) == 0)
 
 
@@ -94,12 +85,8 @@ def test_templates_are_non_negative():
 @pytest.mark.parametrize("experiment", ["BelleII", "BaBar"])
 def test_linear_response_reproduces_toy_covariance(experiment):
     # s + J u with u ~ N(0, 1) implies cov = J J^T; compare with full nonlinear toys
-    if experiment == "BelleII":
-        Nrec, e_vals, e_cov = Nrec_BelleII, eff_vals, eff_cov
-    else:
-        Nrec, e_vals, e_cov = Nrec_BaBar, eff_BaBar_K0_vals, eff_BaBar_K0_cov
     s0, J = signal_template(experiment, include_SM=True)
-    mean, C = dNdqsq_cov(2000, Nrec, include_SM=True, eff_vals=e_vals, eff_cov=e_cov, rng=1)
+    mean, C = dNdqsq_cov(experiment, 2000, include_SM=True, rng=1)
     # Bins below 1% of the peak are excluded: at the kinematic endpoint the efficiency is close to
     # zero, so the toys there are distorted by clipping in the same way (Belle II's last bin, 0.1 events).
     live = s0 > 1e-2 * s0.max()

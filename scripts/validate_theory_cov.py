@@ -10,9 +10,8 @@ nonlinear toys (lights.signal_rates.dNdqsq_cov), for the SM and an example NP te
 
 import numpy as np
 
-from lights.load_data import eff_BaBar_K0_cov, eff_BaBar_K0_vals, eff_cov, eff_vals
 from lights.models import Model
-from lights.signal_rates import Nrec_BaBar, Nrec_BelleII, dNdqsq_cov, signal_template
+from lights.signal_rates import dNdqsq_cov, signal_template
 
 NTOYS = 5000
 SEED = 20261111
@@ -21,12 +20,9 @@ SEED = 20261111
 cases = [("SM", None, True), ("NP (phiphi CSL, mX = 1.5)", Model("phiphi", 1.5, Lambda=1e4, CSL=1e-3), False)]
 
 np.set_printoptions(precision=3, linewidth=200)
-for name, Nrec, e_vals, e_cov in [
-    ("BelleII", Nrec_BelleII, eff_vals, eff_cov),
-    ("BaBar", Nrec_BaBar, eff_BaBar_K0_vals, eff_BaBar_K0_cov),
-]:
+for name in ("BelleII", "BaBar"):
     for label, model, include_SM in cases:
-        _, C_toys = dNdqsq_cov(NTOYS, Nrec, model, include_SM=include_SM, eff_vals=e_vals, eff_cov=e_cov, rng=SEED)
+        _, C_toys = dNdqsq_cov(name, NTOYS, model, include_SM=include_SM, rng=SEED)
         s0, J = signal_template(name, model, include_SM=include_SM)
         C_lin = J @ J.T
 
