@@ -25,7 +25,7 @@ from lights.load_data import (
     w_cont,
     w_neutral,
 )
-from lights.models import B_Bs, Model, from_legacy
+from lights.models import B_Bs, check_model
 from lights.signal_rates import (
     J_SM_BaBar,
     J_SM_BelleII,
@@ -528,7 +528,7 @@ def _normalise(tpl, target=100.0):
     return (out_s[0], out_s[1], out_J[0], out_J[1]), scales
 
 
-def min_logLL(logLL, model_1=None, model_2=None, *legacy_args, **legacy_kwargs):
+def min_logLL(logLL, model_1=None, model_2=None):
     """Minimise the log likelihood w.r.t. the SM signal strength or NP couplings and the nuisance parameters.
 
     logLL:     logLL_BelleII or logLL_BaBar, which selects the experiment
@@ -540,27 +540,9 @@ def min_logLL(logLL, model_1=None, model_2=None, *legacy_args, **legacy_kwargs):
     multiplier(s) of the model(s), with delta_chi2 relative to the SM (mu_SM = 1, no NP). The
     NP templates are normalised internally (see _normalise), so the couplings inside the
     Minuit object are in normalised units; use value and error instead.
-
-    (The old call min_logLL(logLL, Nrec, Nbins, mX, cNP_1, cNP_2, Lambda, is_ident, NP = ...)
-    with coupling arrays still works.)
     """
-    if legacy_args or legacy_kwargs or callable(model_1):
-        vals = from_legacy(
-            "min_logLL",
-            (model_1, model_2) + legacy_args,
-            legacy_kwargs,
-            ("Nrec", "Nbins", "mX", "cNP_1", "cNP_2", "Lambda", "is_ident"),
-            {"mX": 1, "cNP_1": None, "cNP_2": None, "Lambda": 1e4, "is_ident": False, "NP": 0},
-        )
-        NP = vals["NP"]
-        if NP not in (0, 1, 2):
-            raise ValueError("NP must be 0, 1 or 2")
-        model_1 = vals["cNP_1"] if NP >= 1 else None
-        model_2 = vals["cNP_2"] if NP == 2 else None
-        if NP >= 1 and model_1 is None:  # all-zero couplings: nothing to fit, but keep the old behaviour
-            model_1 = Model("phi", vals["mX"])
-        if NP == 2 and model_2 is None:
-            model_2 = Model("phi", vals["mX"])
+    check_model(model_1, "model_1")
+    check_model(model_2, "model_2")
     if model_1 is None and model_2 is not None:
         raise ValueError("Pass a single NP model as model_1")
     NP = (model_1 is not None) + (model_2 is not None)
@@ -606,7 +588,7 @@ def _lep_term(Br_LEP):
 
 
 def _profile_point(c1, c2, sig, templates, global_mins, Br_LEP):
-    """Profile log-likelihood at ONE (cNP_1, cNP_2) grid point. This runs inside a worker."""
+    """Profile log-likelihood at ONE (x1, x2) grid point. This runs inside a worker."""
     head = (1.0, c1, c2)
     fix = ["x0", "x1", "x2"]
     res = np.zeros(4)  # [BelleII, BaBar, LEP, Combined]
@@ -632,28 +614,16 @@ def _profile_point(c1, c2, sig, templates, global_mins, Br_LEP):
     return res
 
 
-def profile_logLL_scan(
-    model_1, model_2, lims_1, lims_2, *legacy_args, pts=(100, 100), sig=(1, 1, 1, 1), n_jobs=-1, **legacy_kwargs
-):
+def profile_logLL_scan(model_1, model_2, lims_1, lims_2, *, pts=(100, 100), sig=(1, 1, 1, 1), n_jobs=-1):
     """Profile log likelihood on a grid of the coupling multipliers of two NP Models (parallel over the grid).
 
     The couplings of model_1 and model_2 are scaled by x1 in lims_1 and x2 in lims_2 (pts
     points each); the two models may be different channels or masses. sig selects which of
     [Belle II, BaBar, LEP, combined] to compute. Returns a ScanResult of the four Delta chi^2
-    grids (BelleII, BaBar, LEP, combined), indexed [x2, x1]. (The old call profile_logLL_scan(mX, cNP_1, cNP_2, lims_1, lims_2, pts, Lambda,
-    is_ident, sig, n_jobs) with coupling arrays still works.)
+    grids (BelleII, BaBar, LEP, combined), indexed [x2, x1].
     """
-    if not isinstance(model_1, Model) or legacy_args or legacy_kwargs:
-        vals = from_legacy(
-            "profile_logLL_scan",
-            (model_1, model_2, lims_1, lims_2) + legacy_args,
-            legacy_kwargs,
-            ("mX", "cNP_1", "cNP_2", "lims_1", "lims_2", "pts", "Lambda", "is_ident", "sig", "n_jobs"),
-            {"pts": pts, "Lambda": 1.0, "is_ident": False, "sig": sig, "n_jobs": n_jobs},
-        )
-        model_1, model_2 = vals["cNP_1"], vals["cNP_2"]
-        lims_1, lims_2, pts, sig, n_jobs = vals["lims_1"], vals["lims_2"], vals["pts"], vals["sig"], vals["n_jobs"]
-    cNP_1_lims, cNP_2_lims = lims_1, lims_2
+    check_model(model_1, "model_1", allow_none=False)
+    check_model(model_2, "model_2")
 
     # ---- Signal templates (computed once, shared by every grid point) ----
     tpl_BelleII = np_templates("BelleII", model_1, model_2)
@@ -676,19 +646,17 @@ def profile_logLL_scan(
             "Combined", templates["Combined"], _x_init("Combined"), ["x0"], extra=_lep_term(Br_LEP)
         ).fval
 
-    # ---- Profiled scan, parallel over the (cNP_1, cNP_2) grid ----
-    cNP_1_vals = np.linspace(cNP_1_lims[0], cNP_1_lims[1], pts[0])
-    cNP_2_vals = np.linspace(cNP_2_lims[0], cNP_2_lims[1], pts[1])
-    n1, n2 = len(cNP_1_vals), len(cNP_2_vals)
+    # ---- Profiled scan, parallel over the (x1, x2) grid ----
+    x1_vals = np.linspace(lims_1[0], lims_1[1], pts[0])
+    x2_vals = np.linspace(lims_2[0], lims_2[1], pts[1])
+    n1, n2 = len(x1_vals), len(x2_vals)
 
-    jobs = (
-        delayed(_profile_point)(c1, c2, sig, templates, global_mins, Br_LEP) for c1 in cNP_1_vals for c2 in cNP_2_vals
-    )
+    jobs = (delayed(_profile_point)(c1, c2, sig, templates, global_mins, Br_LEP) for c1 in x1_vals for c2 in x2_vals)
 
     gen = Parallel(n_jobs=n_jobs, return_as="generator")(jobs)
     results = np.array(list(tqdm(gen, total=n1 * n2, desc=f"{model_1.channel.name}, mX = {model_1.mX:.3g}")))
 
-    # results is ordered (i over cNP_1, j over cNP_2) -> reshape, then transpose to [j, i] like the original
+    # results is ordered (i over x1, j over x2) -> reshape, then transpose to [j, i]
     results = results.reshape(n1, n2, 4)
     LL_vals_BelleII = results[:, :, 0].T
     LL_vals_BaBar = results[:, :, 1].T
@@ -696,5 +664,5 @@ def profile_logLL_scan(
     LL_vals_Combined = results[:, :, 3].T
 
     return ScanResult(
-        LL_vals_BelleII, LL_vals_BaBar, LL_vals_LEP, LL_vals_Combined, cNP_1_vals, cNP_2_vals, (model_1, model_2)
+        LL_vals_BelleII, LL_vals_BaBar, LL_vals_LEP, LL_vals_Combined, x1_vals, x2_vals, (model_1, model_2)
     )

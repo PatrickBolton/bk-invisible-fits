@@ -1,7 +1,7 @@
 import numpy as np
 
 from .constants import mB, mK, mKs
-from .load_data import load, read_csv_to_array
+from .load_data import load
 from .paths import FORM_FACTOR_DIR as DATA_DIR
 
 # Pole masses for the B -> P and B -> V form factors
@@ -19,11 +19,11 @@ MT23 = 5.829
 
 # Coefficients for f+, f0 and fT form factors (B -> P)
 aK_vals_GRDV = load(DATA_DIR / "GRDV" / "aK_vals_GRDV.csv")
-aK_cov_GRDV = np.array(read_csv_to_array(DATA_DIR / "GRDV" / "aK_cov_GRDV.csv"))
+aK_cov_GRDV = load(DATA_DIR / "GRDV" / "aK_cov_GRDV.csv")
 
 # Coefficients for A0, A1, A12, V, T1, T2, T23 (B -> V)
 aKs_vals_GRDV = load(DATA_DIR / "GRDV" / "aKs_vals_GRDV.csv")
-aKs_cov_GRDV = np.array(read_csv_to_array(DATA_DIR / "GRDV" / "aKs_cov_GRDV.csv"))
+aKs_cov_GRDV = load(DATA_DIR / "GRDV" / "aKs_cov_GRDV.csv")
 
 # Default form factor coefficients, (B -> K, B -> K*). A tuple, so it is safe as a default argument.
 A_VALS_GRDV = (aK_vals_GRDV, aKs_vals_GRDV)

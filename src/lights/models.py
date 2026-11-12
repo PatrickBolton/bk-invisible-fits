@@ -51,8 +51,6 @@ class Channel:
     two_body: bool
     rate: Callable
     bs_rate: Callable | None = None
-    legacy_row: int = -1  # row in the old 6 x 14 coupling array
-    legacy_suffix: str = ""  # suffix of the old cdict keys, e.g. "CSL_s"
 
 
 _PSI = ("CVL", "CVR", "CVLp", "CVRp", "CSL", "CSR", "CSLp", "CSRp", "CTL", "CTR")
@@ -66,11 +64,8 @@ CHANNELS = {
             ("CSL", "CSR"),
             True,
             lambda mX, C, Lambda, a_vals: B_BKphi(mX, C, a_vals),
-            None,
-            0,
-            "s",
         ),
-        Channel("V", "B -> K(*) V, vector", ("CVL", "CVR", "CTL", "CTR"), True, B_BKV, None, 1, "v"),
+        Channel("V", "B -> K(*) V, vector", ("CVL", "CVR", "CTL", "CTR"), True, B_BKV),
         Channel(
             "phiphi",
             "B -> K(*) phi phi-bar, scalar pair",
@@ -78,27 +73,17 @@ CHANNELS = {
             False,
             dBdqsq_BKphiphi,
             B_Bsphiphi,
-            2,
-            "ss",
         ),
-        Channel("psipsi", "B -> K(*) psi psi-bar, fermion pair", _PSI, False, dBdqsq_BKpsipsi, B_Bspsipsi, 3, "ff"),
-        Channel("VV", "B -> K V V-bar, vector pair (K only)", ("CSL", "CSR"), False, dBdqsq_BKVV, None, 4, "vv"),
+        Channel("psipsi", "B -> K(*) psi psi-bar, fermion pair", _PSI, False, dBdqsq_BKpsipsi, B_Bspsipsi),
+        Channel("VV", "B -> K V V-bar, vector pair (K only)", ("CSL", "CSR"), False, dBdqsq_BKVV),
         Channel(
             "PsiPsi",
             "B -> K Psi Psi-bar, spin-3/2 pair (K only)",
             _PSI + ("CTSL", "CTSR", "CTPL", "CTPR"),
             False,
             dBdqsq_BKPsiPsi,
-            None,
-            5,
-            "FF",
         ),
     ]
-}
-
-# Old coupling-array layout: cdict["CSL_s"] = (row, column) of a 6 x 14 array
-cdict = {
-    f"{name}_{ch.legacy_suffix}": (ch.legacy_row, j) for ch in CHANNELS.values() for j, name in enumerate(ch.couplings)
 }
 
 
@@ -187,30 +172,6 @@ class Model:
             return 0.0
         return float(self.channel.bs_rate(self.mX, self.C, self.Lambda, self.is_ident))
 
-    # The old 6 x 14 coupling arrays
-    @classmethod
-    def from_cnp(cls, cNP, mX, Lambda=1.0, is_ident=False):
-        """Model from an old-style 6 x 14 coupling array (see cdict). None if all couplings are zero."""
-        cNP = np.asarray(cNP)
-        rows = [ch for ch in CHANNELS.values() if np.any(cNP[ch.legacy_row, : len(ch.couplings)])]
-        if not rows:
-            return None
-        if len(rows) > 1:
-            raise ValueError(
-                "The coupling array sets couplings of more than one channel "
-                f"({[ch.name for ch in rows]}); a Model has a single channel"
-            )
-        ch = rows[0]
-        return cls(
-            ch.name, mX, Lambda, is_ident, **{name: cNP[ch.legacy_row, j] for j, name in enumerate(ch.couplings)}
-        )
-
-    def to_cnp(self):
-        "The old-style 6 x 14 coupling array."
-        cNP = np.zeros((6, 14), dtype=self.C.dtype)
-        cNP[self.channel.legacy_row, : len(self.C)] = self.C
-        return cNP
-
 
 def _rebuild(channel, mX, Lambda, is_ident, couplings):
     return Model(channel, mX, Lambda, is_ident, **couplings)
@@ -232,22 +193,11 @@ def B_Bs(model):
     return 0.0 if model is None else model.B_Bs()
 
 
-def from_legacy(fname, args, kwargs, names, defaults):
-    """Translate an old-style call (coupling arrays) into Models.
-
-    names: the old positional argument names; defaults: their default values. Returns the
-    dict of old arguments, with each "cNP*" entry replaced by a Model (or None).
-    """
-    import warnings
-
-    warnings.warn(
-        f"{fname}: coupling arrays (cdict) are deprecated; pass lights.models.Model objects instead",
-        DeprecationWarning,
-        stacklevel=3,
+def check_model(model, name="model", allow_none=True):
+    "Raise a TypeError unless model is a Model (or None, if allowed)."
+    if (model is None and allow_none) or isinstance(model, Model):
+        return
+    raise TypeError(
+        f"{name} must be a lights.models.Model{' or None' if allow_none else ''}, not {type(model).__name__} "
+        "(the 6 x 14 coupling arrays are no longer supported, e.g. use Model('phi', mX, CSL = ...))"
     )
-    vals = dict(defaults)
-    vals.update(zip(names, args))
-    vals.update(kwargs)
-    for key in [k for k in vals if k.startswith("cNP") and vals[k] is not None]:
-        vals[key] = Model.from_cnp(vals[key], vals["mX"], vals.get("Lambda", 1.0), vals.get("is_ident", False))
-    return vals

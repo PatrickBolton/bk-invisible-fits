@@ -28,7 +28,7 @@ from lights.load_data import (
     factorise,
     sm,
 )
-from lights.models import KS, B_tot, K, Model, dBdqsq_tot, from_legacy
+from lights.models import KS, B_tot, K, check_model, dBdqsq_tot
 
 
 def efficiency(q2_points, eff_points, kind):
@@ -51,19 +51,6 @@ def _is_two_body(model):
 
 # Lowest q^2 of the integration grids: the three-body rates divide by q^2, so q^2 = 0 is avoided
 _QSQ_MIN = 1e-12
-
-
-def _legacy_nrec(fname, args, kwargs):
-    "Old call Nrec(SM, mX, cNP, Lambda, is_ident, a_vals, eff_vals) -> (model, include_SM, extra kwargs)."
-    vals = from_legacy(
-        fname,
-        args,
-        kwargs,
-        ("SM", "mX", "cNP", "Lambda", "is_ident", "a_vals", "eff_vals"),
-        {"Lambda": 1.0, "is_ident": False},
-    )
-    extra = {k: vals[k] for k in ("a_vals", "eff_vals", "ntrue", "npts") if k in vals}
-    return vals["cNP"], bool(vals["SM"]), extra
 
 
 ### Belle II (ITA) ###
@@ -129,22 +116,15 @@ def smearing_kernel(qsqtrue):
     return np.array([np.interp(qsqtrue, _K_QT, Kb) for Kb in _K_BIN])
 
 
-def Nrec_BelleII(
-    model=None, *legacy_args, include_SM=False, a_vals=A_VALS_GRDV, eff_vals=eff_vals, ntrue=1000, **legacy_kwargs
-):
+def Nrec_BelleII(model=None, *, include_SM=False, a_vals=A_VALS_GRDV, eff_vals=eff_vals, ntrue=1000):
     """Number of B+ -> K+ invisible events in the reconstructed q^2 bins of Belle II.
 
     model: the new-physics Model (None: none); include_SM: add the SM signal.
     Integrates the true-q^2 spectrum against the bin-integrated smearing kernel (see
     smearing_kernel), which is equivalent to smearing and then integrating over each
-    reconstructed bin. (The old call Nrec_BelleII(SM, mX, cNP, Lambda, ...) still works.)
+    reconstructed bin.
     """
-    if legacy_args or legacy_kwargs or not (model is None or isinstance(model, Model)):
-        model, include_SM, extra = _legacy_nrec("Nrec_BelleII", (model,) + legacy_args, legacy_kwargs)
-        return Nrec_BelleII(
-            model, include_SM=include_SM, **{"a_vals": a_vals, "eff_vals": eff_vals, "ntrue": ntrue, **extra}
-        )
-
+    check_model(model)
     return _smeared_BelleII(smearing_kernel, model, include_SM, a_vals, eff_vals, ntrue) + np.zeros(len(bin_cents))
 
 
@@ -158,23 +138,15 @@ def dNdqsqrec_BaBar(qsqrec, model=None, *, include_SM=False, a_vals=A_VALS_GRDV,
     return NB_BaBar * rate * eff(qsqrec)
 
 
-def Nrec_BaBar(
-    model=None, *legacy_args, include_SM=False, a_vals=A_VALS_GRDV, eff_vals=eff_BaBar_K0_vals, npts=41, **legacy_kwargs
-):
+def Nrec_BaBar(model=None, *, include_SM=False, a_vals=A_VALS_GRDV, eff_vals=eff_BaBar_K0_vals, npts=41):
     """Number of B0 -> K*0 invisible events in the q^2 bins of BaBar.
 
     model: the new-physics Model (None: none); include_SM: add the SM signal.
     BaBar has no q^2 smearing, so the 3-body pair threshold (4 mX^2) and the kinematic
     endpoint (mB - mKs)^2 appear as sharp edges inside bins. npts integration points per
     bin keeps the error below ~0.5% (3 points gave up to 11%).
-    (The old call Nrec_BaBar(SM, mX, cNP, Lambda, ...) still works.)
     """
-    if legacy_args or legacy_kwargs or not (model is None or isinstance(model, Model)):
-        model, include_SM, extra = _legacy_nrec("Nrec_BaBar", (model,) + legacy_args, legacy_kwargs)
-        return Nrec_BaBar(
-            model, include_SM=include_SM, **{"a_vals": a_vals, "eff_vals": eff_vals, "npts": npts, **extra}
-        )
-
+    check_model(model)
     lo, hi = (bin_cents_BaBar - bw_BaBar) * mB**2, (bin_cents_BaBar + bw_BaBar) * mB**2  # bin edges in q^2
     Nrec_vals = np.zeros(len(bin_cents_BaBar))
 
