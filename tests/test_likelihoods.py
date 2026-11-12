@@ -59,23 +59,24 @@ def test_kind_lookup_survives_pickling():
 
 
 def test_SM_fit_regression():
-    mu, err, m, dchi2 = min_logLL(logLL_BelleII)
-    assert m.valid
-    assert mu == pytest.approx(5.086, abs = 0.01)
-    assert err == pytest.approx(1.587, abs = 0.01)
-    assert -dchi2 == pytest.approx(6.693, abs = 0.01)
+    fit = min_logLL(logLL_BelleII)
+    assert fit.minuit.valid
+    assert fit.value == pytest.approx(5.086, abs = 0.01)
+    assert fit.error == pytest.approx(1.587, abs = 0.01)
+    assert -fit.delta_chi2 == pytest.approx(6.693, abs = 0.01)
+    mu, err, m, dchi2 = fit                    # also unpacks as a tuple
     assert reduced_chisq(m, obs) == pytest.approx(1.981, abs = 0.01)
     assert profile_logLL_SM(logLL_BelleII, 0.) == pytest.approx(10.37, abs = 0.02)
 
 
 def test_NP_fit_regression():
-    x1, err, m, dchi2 = min_logLL(logLL_BelleII, GS)
-    assert abs(x1) == pytest.approx(1.571, abs = 0.003)
-    assert dchi2 == pytest.approx(-20.05, abs = 0.02)
+    fit = min_logLL(logLL_BelleII, GS)
+    assert abs(fit.value) == pytest.approx(1.571, abs = 0.003)
+    assert fit.delta_chi2 == pytest.approx(-20.05, abs = 0.02)
 
 
 def test_NP_fit_in_parallel_workers():
-    fit = lambda model: min_logLL(logLL_BelleII, model)[3]
+    fit = lambda model: min_logLL(logLL_BelleII, model).delta_chi2
     res = Parallel(n_jobs = 2)(delayed(fit)(GS.with_mass(mX)) for mX in (1.0, 2.1))
     assert res[1] == pytest.approx(-20.05, abs = 0.02)
 
@@ -83,8 +84,8 @@ def test_NP_fit_in_parallel_workers():
 def test_vanishing_template_is_still_fitted():
     # Templates ~ m_X^2 need large couplings; normalisation keeps them within reach of Migrad
     model = Model("PsiPsi", 1e-4, Lambda = 1e2, CTPL = 1., CTPR = -1.)
-    d_small = min_logLL(logLL_BelleII, model)[3]
-    d_ref = min_logLL(logLL_BelleII, model.with_mass(1e-2))[3]
+    d_small = min_logLL(logLL_BelleII, model).delta_chi2
+    d_ref = min_logLL(logLL_BelleII, model.with_mass(1e-2)).delta_chi2
     assert d_small < 0
     assert d_small == pytest.approx(d_ref, abs = 0.01)
 
@@ -102,14 +103,15 @@ def test_scan_minimum_is_close_to_zero():
     gS = Model("phi", 2.1, CSL = 5e-9, CSR = 5e-9)
     gP = Model("phi", 2.1, CSL = 5e-9, CSR = -5e-9)
     res = profile_logLL_scan(gS, gP, [-8, 8], [-30, 30], pts = [15, 15], n_jobs = 2)
-    for name, a in zip(["BelleII", "BaBar", "LEP", "Combined"], res):
+    assert np.array_equal(res.combined, res[3])
+    for name, a in zip(res._fields, res):
         assert np.isfinite(a).all(), name
         assert -0.05 < a.min() < 1.0, name
 
 
 def test_reduced_chisq_counts_free_strengths():
-    m_SM = min_logLL(logLL_BelleII)[2]
-    m_NP = min_logLL(logLL_BelleII, GS)[2]
+    m_SM = min_logLL(logLL_BelleII).minuit
+    m_NP = min_logLL(logLL_BelleII, GS).minuit
     assert reduced_chisq(m_SM, obs) == pytest.approx(reduced_chisq(m_SM, obs, 1))
     assert reduced_chisq(m_NP, obs) == pytest.approx(reduced_chisq(m_NP, obs, 1))   # x0 fixed, x1 free
     m_free = _fit("BelleII", np_templates("BelleII", GS), _x_init("BelleII"), ["x2"])

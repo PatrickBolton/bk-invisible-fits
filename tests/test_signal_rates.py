@@ -22,7 +22,7 @@ def dense_BelleII(model, include_SM, n = 201):
     out = []
     for b in bin_cents:
         q = np.linspace(b - bw, b + bw, n)
-        out.append(simpson(dNdqsqrec_BelleII(q, model, include_SM), x = q))
+        out.append(simpson(dNdqsqrec_BelleII(q, model, include_SM = include_SM), x = q))
     return np.array(out)
 
 
@@ -30,7 +30,7 @@ def dense_BaBar(model, include_SM, n = 2001):
     out = []
     for b in bin_cents_BaBar:
         q = np.linspace(max(b - bw_BaBar, 1e-5), b + bw_BaBar, n) * mB**2
-        out.append(simpson(dNdqsqrec_BaBar(q, model, include_SM), x = q))
+        out.append(simpson(dNdqsqrec_BaBar(q, model, include_SM = include_SM), x = q))
     return np.array(out)
 
 

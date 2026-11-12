@@ -48,7 +48,7 @@ def _qsqtrue_grid(model, ntrue):
     "True-q^2 grid from the pair threshold 4 mX^2 to the kinematic endpoint."
     return np.linspace(min(4*model.mX**2, _QSQ_MAX_K - 1e-10), _QSQ_MAX_K, ntrue)
 
-def dNdqsqrec_BelleII(qsqrec, model = None, include_SM = False, a_vals = A_VALS_GRDV, eff_vals = eff_vals, ntrue = 1000):
+def dNdqsqrec_BelleII(qsqrec, model = None, *, include_SM = False, a_vals = A_VALS_GRDV, eff_vals = eff_vals, ntrue = 1000):
     """Number of B+ -> K+ invisible events at Belle II per unit reconstructed q^2.
 
     qsqrec may be a scalar or an ascending 1D array (evaluated in one vectorised call).
@@ -124,7 +124,7 @@ def Nrec_BelleII(model = None, *legacy_args, include_SM = False, a_vals = A_VALS
 
 
 ### BaBar ###
-def dNdqsqrec_BaBar(qsqrec, model = None, include_SM = False, a_vals = A_VALS_GRDV, eff_vals = eff_BaBar_K0_vals):
+def dNdqsqrec_BaBar(qsqrec, model = None, *, include_SM = False, a_vals = A_VALS_GRDV, eff_vals = eff_BaBar_K0_vals):
     "Number of B0 -> K*0 invisible events at BaBar per unit q^2 (three-body and SM signal; no smearing)."
     eff = efficiency(eff_bin_cents_BaBar * mB**2, eff_vals, 3)
     rate = dBdqsq_tot(qsqrec, model, a_vals)[KS]
@@ -157,7 +157,8 @@ def Nrec_BaBar(model = None, *legacy_args, include_SM = False, a_vals = A_VALS_G
         if _is_three_body(model) or include_SM:
             # Avoid q^2 = 0 exactly, where the 3-body rates divide by q^2
             qsq_vals = np.linspace(max(lo, 1e-5), hi, npts) * mB**2
-            N += simpson(dNdqsqrec_BaBar(qsq_vals, model, include_SM, a_vals, eff_vals), x = qsq_vals)
+            N += simpson(dNdqsqrec_BaBar(qsq_vals, model, include_SM = include_SM, a_vals = a_vals, eff_vals = eff_vals),
+                         x = qsq_vals)
 
         # Two-body decay: delta function at q^2 = mX^2
         if _is_two_body(model) and lo * mB**2 < model.mX**2 < hi * mB**2:
@@ -169,7 +170,7 @@ def Nrec_BaBar(model = None, *legacy_args, include_SM = False, a_vals = A_VALS_G
 
 
 ### Theory uncertainty ###
-def dNdqsq_cov(Ntoys, N_rec, model = None, include_SM = False, eff_vals = eff_vals, eff_cov = eff_cov, rng = None):
+def dNdqsq_cov(Ntoys, N_rec, model = None, *, include_SM = False, eff_vals = eff_vals, eff_cov = eff_cov, rng = None):
     """Theory covariance of the binned signal prediction (form factors and efficiencies) from toys.
 
     Each toy draws form factor coefficients and efficiencies, and N_rec (Nrec_BelleII or
@@ -213,7 +214,7 @@ _NREC = {"BelleII": Nrec_BelleII, "BaBar": Nrec_BaBar}
 NU_BelleII = A_aK.shape[1] + A_eff_BelleII.shape[1]   # number of input nuisance params.
 NU_BaBar = A_aKs.shape[1] + A_eff_BaBar.shape[1]
 
-def signal_template(experiment, model = None, include_SM = False, h = 1.0):
+def signal_template(experiment, model = None, *, include_SM = False, h = 1.0):
     """Binned signal template s0 and its response J = ds/du to the input nuisance params.
 
     experiment is "BelleII" or "BaBar"; model the new-physics Model (None: none);

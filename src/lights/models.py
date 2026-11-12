@@ -19,11 +19,8 @@ from typing import Callable, Optional
 import numpy as np
 
 from .form_factors import A_VALS_GRDV
-from .branching_fractions import (B_BKphi, B_BKV, dBdqsq_BKphiphi, dBdqsq_BKpsipsi, dBdqsq_BKVV,
+from .branching_fractions import (K, KS, KS_L, KS_T, B_BKphi, B_BKV, dBdqsq_BKphiphi, dBdqsq_BKpsipsi, dBdqsq_BKVV,
                                   dBdqsq_BKPsiPsi, B_Bsphiphi, B_Bspsipsi)
-
-# Rows of the returned B -> K(*) rates
-K, KS, KS_L, KS_T = 0, 1, 2, 3
 
 
 @dataclass(frozen = True)

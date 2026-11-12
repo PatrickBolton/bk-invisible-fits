@@ -74,4 +74,4 @@ def test_old_calls_give_the_same_results():
         old_fit = min_logLL(logLL_BelleII, Nrec_BelleII, 20, 2.1, c, np.zeros((6, 14)), 1., NP = 1)
     assert any(issubclass(x.category, DeprecationWarning) for x in w)
     assert np.array_equal(old_B, Nrec_BelleII(m)) and np.array_equal(old_b, Nrec_BaBar(m))
-    assert old_fit[3] == pytest.approx(min_logLL(logLL_BelleII, m)[3], abs = 1e-6)
+    assert old_fit.delta_chi2 == pytest.approx(min_logLL(logLL_BelleII, m).delta_chi2, abs = 1e-6)

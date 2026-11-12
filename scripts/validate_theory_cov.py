@@ -24,8 +24,8 @@ np.set_printoptions(precision = 3, linewidth = 200)
 for name, Nrec, e_vals, e_cov in [("BelleII", Nrec_BelleII, eff_vals, eff_cov),
                                   ("BaBar", Nrec_BaBar, eff_BaBar_K0_vals, eff_BaBar_K0_cov)]:
     for label, model, include_SM in cases:
-        _, C_toys = dNdqsq_cov(NTOYS, Nrec, model, include_SM, eff_vals = e_vals, eff_cov = e_cov, rng = SEED)
-        s0, J = signal_template(name, model, include_SM)
+        _, C_toys = dNdqsq_cov(NTOYS, Nrec, model, include_SM = include_SM, eff_vals = e_vals, eff_cov = e_cov, rng = SEED)
+        s0, J = signal_template(name, model, include_SM = include_SM)
         C_lin = J @ J.T
 
         sd_t, sd_l = np.sqrt(np.diag(C_toys)), np.sqrt(np.diag(C_lin))

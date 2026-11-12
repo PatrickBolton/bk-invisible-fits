@@ -1,3 +1,5 @@
+from typing import NamedTuple
+
 import numpy as np
 
 from lights.load_data import (Nbins, obs, b_cont, b_charged, b_neutral, w_cont, w_charged, w_neutral,
@@ -376,6 +378,28 @@ def np_templates(experiment, model_1 = None, model_2 = None):
     (s1, R1), (s2, R2) = one(model_1), one(model_2)
     return s1, s2, R1, R2
 
+class FitResult(NamedTuple):
+    """Result of min_logLL; also unpacks as (value, error, minuit, delta_chi2).
+
+    value, error: the SM signal strength mu_SM (no NP model), or the coupling multiplier(s)
+                  of the NP model(s) (a pair for two models)
+    minuit:       the Minuit object of the fit (couplings in normalised units, see _normalise)
+    delta_chi2:   -2 Delta ln L relative to the SM (mu_SM = 1, no new physics)
+    """
+    value: object
+    error: object
+    minuit: object
+    delta_chi2: float
+
+
+class ScanResult(NamedTuple):
+    "Delta chi^2 grids of profile_logLL_scan, indexed [x2, x1]; also unpacks as a 4-tuple."
+    BelleII: np.ndarray
+    BaBar: np.ndarray
+    LEP: np.ndarray
+    combined: np.ndarray
+
+
 def _limits(kind):
     """Parameter limits for a likelihood of the given kind ("BelleII", "BaBar", "Combined").
 
@@ -457,10 +481,10 @@ def min_logLL(logLL, model_1 = None, model_2 = None, *legacy_args, **legacy_kwar
                (signal strengths x1^2, x2^2). With no model, the SM signal strength mu_SM is
                fitted; with one or two models, mu_SM = 1 and x1 (and x2) are fitted.
 
-    Returns (value, error, m, Delta chi^2): mu_SM, or the coupling multiplier(s) of the
-    model(s), with Delta chi^2 relative to the SM (mu_SM = 1, no NP). The NP templates are
-    normalised internally (see _normalise), so the couplings inside the Minuit object m are
-    in normalised units; use the returned values instead.
+    Returns a FitResult (value, error, minuit, delta_chi2): mu_SM, or the coupling
+    multiplier(s) of the model(s), with delta_chi2 relative to the SM (mu_SM = 1, no NP). The
+    NP templates are normalised internally (see _normalise), so the couplings inside the
+    Minuit object are in normalised units; use value and error instead.
 
     (The old call min_logLL(logLL, Nrec, Nbins, mX, cNP_1, cNP_2, Lambda, is_ident, NP = ...)
     with coupling arrays still works.)
@@ -493,17 +517,17 @@ def min_logLL(logLL, model_1 = None, model_2 = None, *legacy_args, **legacy_kwar
     if NP == 0:
         # Minimise w.r.t. signal strength and nuisance params.
         m = _fit(kind, tpl, _x_init(kind), ["x1", "x2"], errors = True)
-        return m.values[0], m.errors[0], m, m.fval - profile_min_SM
+        return FitResult(m.values[0], m.errors[0], m, m.fval - profile_min_SM)
 
     if NP == 1:
         # Minimise Log Likelihood of SM + NP (1 coupling)
         m = _fit(kind, tpl, _x_init(kind), ["x0", "x2"], errors = True)
-        return m.values[1] * unscale[0], m.errors[1] * unscale[0], m, m.fval - profile_min_SM
+        return FitResult(m.values[1] * unscale[0], m.errors[1] * unscale[0], m, m.fval - profile_min_SM)
 
     # Minimise Log Likelihood of SM + NP (2 couplings)
     m = _fit(kind, tpl, _x_init(kind), ["x0"], errors = True)
-    return ((m.values[1] * unscale[0], m.values[2] * unscale[1]),
-            (m.errors[1] * unscale[0], m.errors[2] * unscale[1]), m, m.fval - profile_min_SM)
+    return FitResult((m.values[1] * unscale[0], m.values[2] * unscale[1]),
+                     (m.errors[1] * unscale[0], m.errors[2] * unscale[1]), m, m.fval - profile_min_SM)
 
 def profile_logLL_SM(logLL, mu):
     "Profile log likelihood w.r.t. the signal strength and nuisance parameters."
@@ -558,8 +582,8 @@ def profile_logLL_scan(model_1, model_2, lims_1, lims_2, *legacy_args, pts = [10
 
     The couplings of model_1 and model_2 are scaled by x1 in lims_1 and x2 in lims_2 (pts
     points each); the two models may be different channels or masses. sig selects which of
-    [Belle II, BaBar, LEP, combined] to compute. Returns the four Delta chi^2 grids, indexed
-    [x2, x1]. (The old call profile_logLL_scan(mX, cNP_1, cNP_2, lims_1, lims_2, pts, Lambda,
+    [Belle II, BaBar, LEP, combined] to compute. Returns a ScanResult of the four Delta chi^2
+    grids (BelleII, BaBar, LEP, combined), indexed [x2, x1]. (The old call profile_logLL_scan(mX, cNP_1, cNP_2, lims_1, lims_2, pts, Lambda,
     is_ident, sig, n_jobs) with coupling arrays still works.)
     """
     if not isinstance(model_1, Model) or legacy_args or legacy_kwargs:
@@ -608,4 +632,4 @@ def profile_logLL_scan(model_1, model_2, lims_1, lims_2, *legacy_args, pts = [10
     LL_vals_LEP      = results[:, :, 2].T
     LL_vals_Combined = results[:, :, 3].T
 
-    return LL_vals_BelleII, LL_vals_BaBar, LL_vals_LEP, LL_vals_Combined
+    return ScanResult(LL_vals_BelleII, LL_vals_BaBar, LL_vals_LEP, LL_vals_Combined)
