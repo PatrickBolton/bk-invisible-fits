@@ -29,7 +29,7 @@ Lambda of the effective operators. Couplings not given are zero.
 
 ```python
 from lights.models import Model, CHANNELS
-from lights.likelihoods import min_logLL, profile_logLL_scan
+from lights.fits import mass_scan, min_logLL, profile_logLL_scan
 
 gS = Model("phi", mX = 2.1, CSL = 5e-9, CSR = 5e-9)                   # B -> K phi
 fV = Model("psipsi", mX = 0.6, Lambda = 1e4, CVL = 1., CVR = 1.)       # B -> K psi psi-bar
@@ -46,6 +46,9 @@ fit.value, fit.error, fit.delta_chi2
 
 # NP fit: the couplings of the model are scaled by a fitted multiplier
 fit = min_logLL("BelleII", gS)
+
+# The NP fit as a function of the mass (in parallel)
+delta_chi2 = mass_scan("BelleII", gS, [0.5, 1.0, 2.1])
 
 # Profile likelihood on a grid of the multipliers of two models (in parallel)
 gP = Model("phi", mX = 2.1, CSL = 5e-9, CSR = -5e-9)
@@ -65,7 +68,8 @@ scan.BelleII, scan.BaBar, scan.LEP, scan.combined     # Delta chi^2 grids, index
 | `lights.form_factors` | B → K and B → K* form factors (GRDV fit) |
 | `lights.load_data` | the experimental inputs, grouped as `BelleII` and `BaBar` |
 | `lights.signal_rates` | binned signal predictions and their response to the theory inputs |
-| `lights.likelihoods` | likelihoods, fits and profile likelihood scans |
+| `lights.likelihoods` | likelihoods and gradients (compiled with numba), NP signal templates |
+| `lights.fits` | fits, profile likelihoods, mass scans and coupling scans |
 | `lights.statistics` | reduced chi-squared of a fit |
 | `lights.plotting` | figure style and contour plots |
 
@@ -76,7 +80,7 @@ nuisance parameters for the backgrounds. The form factor coefficients and effici
 as shared nuisance parameters u ~ N(0, 1), to which every signal template (SM and NP)
 responds log-normally, so the theory uncertainties of the SM and NP signals are correlated.
 The combined fit adds the Belle II, BaBar and LEP likelihoods. Fits use iminuit with analytic
-gradients; the likelihoods are compiled with numba.
+gradients (`lights.fits`); the likelihoods are compiled with numba.
 
 ## Notebooks
 

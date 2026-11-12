@@ -5,7 +5,8 @@ import pickle
 import numpy as np
 import pytest
 
-from lights.likelihoods import logLL_BelleII, min_logLL
+from lights.fits import min_logLL
+from lights.likelihoods import logLL_BelleII
 from lights.models import B_Bs, B_tot, Model, dBdqsq_tot
 from lights.signal_rates import Nrec_BelleII
 

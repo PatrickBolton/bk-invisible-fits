@@ -9,7 +9,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from lights.likelihoods import ScanResult, profile_logLL_scan
+from lights.fits import ScanResult, profile_logLL_scan
 from lights.models import Model
 from lights.plotting import plot_contours
 
