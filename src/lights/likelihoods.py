@@ -87,6 +87,9 @@ def sigdot(x, y):
 #   p[U+3N:U+3N+3]    mu_cont, mu_charged, mu_neutral   background normalisation params.
 NPAR_BelleII = NU_BelleII + 3 * Nbins + 3
 
+# Relative uncertainty of each Belle II background normalisation (mu_cont, mu_charged, mu_neutral)
+BKG_NORM_SIGMA = 0.02
+
 
 @nb.njit(**kwd)
 def _exp_BelleII(mu_SM, mu_NP_1, mu_NP_2, s_NP_1, s_NP_2, R_NP_1, R_NP_2, p):
@@ -113,7 +116,7 @@ def _penalty_BelleII(p):
     u, z = p[0:U], p[U : U + 3 * N]
     mu_cont, mu_charged, mu_neutral = p[U + 3 * N], p[U + 3 * N + 1], p[U + 3 * N + 2]
 
-    sigma = 0.02
+    sigma = BKG_NORM_SIGMA
     normgauss = (mu_cont / sigma) ** 2 + (mu_charged / sigma) ** 2 + (mu_neutral / sigma) ** 2
 
     return u @ u + z @ z + normgauss
@@ -289,7 +292,7 @@ def _grad_BelleII(mu_SM, mu_NP_1, mu_NP_2, s_NP_1, s_NP_2, R_NP_1, R_NP_2, p):
     dp[U : U + N] = g * (1 + mu_cont) * w_cont + 2 * z_cont
     dp[U + N : U + 2 * N] = g * (1 + mu_charged) * w_charged + 2 * z_charged
     dp[U + 2 * N : U + 3 * N] = g * (1 + mu_neutral) * w_neutral + 2 * z_neutral
-    sigma = 0.02
+    sigma = BKG_NORM_SIGMA
     dp[U + 3 * N] = g @ B_cont + 2 * mu_cont / sigma**2
     dp[U + 3 * N + 1] = g @ B_charged + 2 * mu_charged / sigma**2
     dp[U + 3 * N + 2] = g @ B_neutral + 2 * mu_neutral / sigma**2
@@ -491,13 +494,27 @@ class FitResult(NamedTuple):
     delta_chi2: float
 
 
-class ScanResult(NamedTuple):
-    "Delta chi^2 grids of profile_logLL_scan, indexed [x2, x1]; also unpacks as a 4-tuple."
-
+class _ScanGrids(NamedTuple):
     BelleII: np.ndarray
     BaBar: np.ndarray
     LEP: np.ndarray
     combined: np.ndarray
+
+
+class ScanResult(_ScanGrids):
+    """Delta chi^2 grids of profile_logLL_scan, indexed [x2, x1]; also unpacks as a 4-tuple.
+
+    Besides the four grids (BelleII, BaBar, LEP, combined) it records the scan itself:
+    x1, x2: the coupling multipliers of the grid; models: (model_1, model_2).
+    """
+
+    def __new__(cls, BelleII, BaBar, LEP, combined, x1=None, x2=None, models=(None, None)):
+        self = super().__new__(cls, BelleII, BaBar, LEP, combined)
+        self.x1, self.x2, self.models = x1, x2, models
+        return self
+
+    def __getnewargs__(self):  # pickling keeps the grids and models
+        return (*self, self.x1, self.x2, self.models)
 
 
 def _limits(kind):
@@ -756,4 +773,6 @@ def profile_logLL_scan(
     LL_vals_LEP = results[:, :, 2].T
     LL_vals_Combined = results[:, :, 3].T
 
-    return ScanResult(LL_vals_BelleII, LL_vals_BaBar, LL_vals_LEP, LL_vals_Combined)
+    return ScanResult(
+        LL_vals_BelleII, LL_vals_BaBar, LL_vals_LEP, LL_vals_Combined, cNP_1_vals, cNP_2_vals, (model_1, model_2)
+    )

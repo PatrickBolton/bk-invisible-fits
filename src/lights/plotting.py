@@ -51,3 +51,45 @@ def sigma_levels(ax, labels=0, label_x=None, label_offset=1.0, n_lines=5, fontsi
         ax.axhline(-(n**2), ls="--", color="k", alpha=0.1)
     for n in range(1, labels + 1):
         ax.text(label_x, -(n**2) - label_offset, rf"${n}\sigma$", fontsize=fontsize)
+
+
+SIGMA_LEVELS_2D = [2.3, 6.18, 11.83]  # Delta chi^2 of the 1, 2, 3 sigma regions for two parameters
+
+
+def plot_contours(ax, scan, scale=(1.0, 1.0), lep=False, color=0, shades=200, majorana=None, combined_label="Combined"):
+    """Draw the contours of a profile_logLL_scan result on ax and return their legend handles.
+
+    Draws the 1 sigma (Delta chi^2 = 2.3) contours of Belle II (dashed), BaBar (dotted) and,
+    with lep = True, LEP (red, dotted), and the 1, 2 and 3 sigma contours and regions of the
+    combined fit. majorana: an optional second scan whose combined 1 sigma region is overlaid.
+    The axes show the coupling multipliers x1, x2 of the scan times scale, e.g. the value of
+    the coupling combination they stand for; the limits are the extent of the grid.
+    color, shades: categorical_cmap colour index and number of shades of the combined fit.
+    Returns {label: handle} for a legend.
+    """
+    X, Y = np.meshgrid(np.asarray(scan.x1) * scale[0], np.asarray(scan.x2) * scale[1])
+    single = {"levels": [2.3], "cmap": "Greys", "vmin": -20, "vmax": 10}
+    handles = {}
+
+    cs = ax.contour(X, Y, scan.BelleII, linestyles="--", **single)
+    handles["Belle II"] = cs.legend_elements()[0][0]
+    cs = ax.contour(X, Y, scan.BaBar, linestyles=":", **single)
+    handles["BaBar"] = cs.legend_elements()[0][0]
+    if lep:
+        cs = ax.contour(X, Y, scan.LEP, levels=[2.3], cmap="Reds", vmin=-20, vmax=10, linestyles=":")
+        handles["LEP"] = cs.legend_elements()[0][0]
+
+    cmap = categorical_cmap(color, color + 1, shades)
+    cs = ax.contour(X, Y, scan.combined, levels=SIGMA_LEVELS_2D, cmap=cmap, vmin=5)
+    ax.contourf(X, Y, scan.combined, levels=[0] + SIGMA_LEVELS_2D, cmap=cmap, vmin=5, alpha=0.2)
+    handles[combined_label] = cs.legend_elements()[0][0]
+
+    if majorana is not None:
+        cmap = categorical_cmap(9, 10, 200)
+        cs = ax.contour(X, Y, majorana.combined, levels=[2.3], cmap=cmap, vmin=1)
+        ax.contourf(X, Y, majorana.combined, levels=[0, 2.3], cmap=cmap, vmin=1, alpha=0.2)
+        handles["Combined, Majorana"] = cs.legend_elements()[0][0]
+
+    ax.set_xlim(X.min(), X.max())
+    ax.set_ylim(Y.min(), Y.max())
+    return handles
