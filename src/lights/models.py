@@ -103,7 +103,8 @@ class Model:
 
     def __init__(self, channel, mX, Lambda=1.0, is_ident=False, **couplings):
         if channel not in CHANNELS:
-            raise ValueError(f"Unknown channel {channel!r}; choose from {list(CHANNELS)}")
+            choices = "\n".join(f"  {name!r:9} {ch.description}" for name, ch in CHANNELS.items())
+            raise ValueError(f"Unknown channel {channel!r}; the channels are\n{choices}")
         ch = CHANNELS[channel]
         unknown = set(couplings) - set(ch.couplings)
         if unknown:

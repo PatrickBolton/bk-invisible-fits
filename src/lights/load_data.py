@@ -55,8 +55,8 @@ def eff_vals_gen(Ntoys, eff_vals, eff_cov, rng=None):
 
 
 def _bins(edges):
-    "Bin edges, centres and half width of equal-width bins."
-    return edges, (edges[1:] + edges[:-1]) / 2, (edges[1] - edges[0]) / 2
+    "Bin edges and centres."
+    return edges, (edges[1:] + edges[:-1]) / 2
 
 
 ### Belle II B+ -> K+ E_miss, inclusive tag ###
@@ -66,7 +66,7 @@ class BelleIIData:
 
     NB:             number of BB-bar pairs (the factor 2 f(+-) for signal-side B+ mesons is
                     assumed to be absorbed in the efficiencies)
-    Nbins, bins, bin_cents, bw:  number, edges, centres and half width of the reconstructed q^2 bins
+    Nbins, bins, bin_cents:  number, edges and centres of the reconstructed q^2 bins
     obs:            observed events per bin
     b_cont, b_charged, b_neutral:  expected backgrounds (continuum, B+B-, B0B0-bar) per bin
     b_errors:       total MC uncertainty of the background per bin
@@ -84,7 +84,6 @@ class BelleIIData:
     Nbins: int
     bins: np.ndarray
     bin_cents: np.ndarray
-    bw: float
     obs: np.ndarray
     b_cont: np.ndarray
     b_charged: np.ndarray
@@ -104,7 +103,7 @@ class BelleIIData:
 
 
 def _load_BelleII(Nbins=20):
-    bins, bin_cents, bw = _bins(np.arange(-1.0, 21.0)[: Nbins + 1])
+    bins, bin_cents = _bins(np.arange(-1.0, 21.0)[: Nbins + 1])
 
     b_cont = load(DATA_DIR / "bkg_inc_cont.txt")[:Nbins]
     b_charged = load(DATA_DIR / "bkg_inc_charged.txt")[:Nbins]
@@ -115,7 +114,7 @@ def _load_BelleII(Nbins=20):
     # Efficiencies [%] per 2 GeV^2 bin, rows: value, lower and upper uncertainty (inclusive and hadronic tag)
     eff_data = load_json(DATA_DIR / "SignalEfficiency.json")
     effHad_data = load_json(DATA_DIR / "SignalEfficiency_HAD.json")
-    eff_bins, eff_bin_cents, _ = _bins(np.arange(0.0, 24.0 + 2, 2))
+    eff_bins, eff_bin_cents = _bins(np.arange(0.0, 24.0 + 2, 2))
     eff_sigma = 1 / 100.0 * (eff_data[2] - eff_data[1]) / 2.0
 
     return BelleIIData(
@@ -123,7 +122,6 @@ def _load_BelleII(Nbins=20):
         Nbins=Nbins,
         bins=bins,
         bin_cents=bin_cents,
-        bw=bw,
         obs=load(DATA_DIR / "obs_inc.txt")[:Nbins],
         b_cont=b_cont,
         b_charged=b_charged,
@@ -165,7 +163,7 @@ class BaBarData:
 
     NB:             number of BB-bar pairs (the factor 2 f(00) for signal-side B0 mesons is
                     assumed to be absorbed in the efficiencies)
-    Nbins, bins, bin_cents, bw:  number, edges, centres and half width of the q^2 bins
+    Nbins, bins, bin_cents:  number, edges and centres of the q^2 bins
                     (0.1 mB^2 wide, from 0 to 0.7 mB^2)
     obs:            observed events per bin
     b_tot, b_comb, b_peak:  expected total, combinatorial and peaking backgrounds per bin
@@ -181,7 +179,6 @@ class BaBarData:
     Nbins: int
     bins: np.ndarray
     bin_cents: np.ndarray
-    bw: float
     obs: np.ndarray
     b_tot: np.ndarray
     b_comb: np.ndarray
@@ -198,7 +195,7 @@ class BaBarData:
 
 
 def _load_BaBar(Nbins=7):
-    bins, bin_cents, bw = _bins(np.linspace(0, 0.7, 8)[: Nbins + 1] * mB**2)
+    bins, bin_cents = _bins(np.linspace(0, 0.7, 8)[: Nbins + 1] * mB**2)
 
     b_tot = load_json(DATA_DIR / "PeakBackgroundBabarB0Ks0_PDF.json")[:Nbins]
     b_comb = load_json(DATA_DIR / "CombBackgroundBabarB0Ks0_PDF.json")[:Nbins]
@@ -213,7 +210,6 @@ def _load_BaBar(Nbins=7):
         Nbins=Nbins,
         bins=bins,
         bin_cents=bin_cents,
-        bw=bw,
         obs=load_json(DATA_DIR / "RateBaBarB0Ks0_PDF.json")[0][:Nbins],
         b_tot=b_tot,
         b_comb=b_comb,

@@ -276,20 +276,6 @@ def grad_Combined(x, s1_B, s2_B, R1_B, R2_B, s1_b, s2_b, R1_b, R2_b):
     return _chain(x, d_mu_B + d_mu_b, np.concatenate((d_p_B, d_p_b)))
 
 
-@nb.njit(**kwd)
-def Nevents_BelleII(x, s_NP_1, s_NP_2, R_NP_1, R_NP_2):
-    "Expected number of Belle II ITA events: SM plus NP B+ -> K+ invisible signal and backgrounds."
-    sig, bkg, mu_bkg = _model_BelleII(x[3:], s_NP_1, s_NP_2, R_NP_1, R_NP_2)
-    return _exp_BelleII(_strengths(x), sig, bkg, mu_bkg)
-
-
-@nb.njit(**kwd)
-def Nevents_BaBar(x, s_NP_1, s_NP_2, R_NP_1, R_NP_2):
-    "Expected number of BaBar events: SM plus NP B0 -> K*0 invisible signal and backgrounds."
-    sig, bkg, th, rec, _, Nnorm = _model_BaBar(x[3:], s_NP_1, s_NP_2, R_NP_1, R_NP_2)
-    return (1 + rec) * _mix(_strengths(x), sig) + (1 + Nnorm) * (1 + th) * bkg
-
-
 # LEP (Bs -> inv): Gaussian in the number of events N_norm * B(Bs -> inv)
 LEP_N_norm = 6607.14
 LEP_mu = 0.525241

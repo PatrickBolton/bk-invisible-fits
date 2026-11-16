@@ -4,10 +4,11 @@ import numpy as np
 import pytest
 
 from lights.likelihoods import (
-    Nevents_BelleII,
+    BKG_NORM_SIGMA,
     NPAR_BaBar,
     NPAR_BelleII,
     Templates,
+    components_BaBar,
     components_BelleII,
     grad_BaBar,
     grad_BelleII,
@@ -19,7 +20,9 @@ from lights.likelihoods import (
     logLL_LEP,
     np_templates,
 )
+from lights.load_data import BaBar, BelleII
 from lights.models import Model
+from lights.signal_rates import NU_BaBar
 
 M1 = Model("phi", 1.0, CSL=1e-8, CSR=3e-9)
 M2 = Model("phiphi", 1.0, Lambda=1e4, CSL=1e-3)
@@ -52,10 +55,24 @@ def test_gradients_match_finite_differences(kind):
     assert np.max(np.abs(g(x) - gn) / (1 + np.abs(gn))) < 1e-4
 
 
-def test_components_sum_to_expected_events():
-    x = np.r_[1.2, 0.5, 0.3, np.full(NPAR_BelleII, 0.1)]
-    x[-3:] = 0.01
-    assert sum(components_BelleII(x, *T_BELLE).values()) == pytest.approx(Nevents_BelleII(x, *T_BELLE))
+def test_components_sum_to_the_expected_events_of_the_likelihood():
+    # -2 ln L = 2 sum(e - o ln e) + Gaussian penalties, with e the sum of the components
+    rng = np.random.default_rng(2)
+    x = np.r_[1.2, 0.5, 0.3, 0.1 * rng.normal(size=NPAR_BelleII)]
+    e = sum(components_BelleII(x, *T_BELLE).values())
+    p = x[3:]
+    penalty = p[:-3] @ p[:-3] + p[-3:] @ p[-3:] / BKG_NORM_SIGMA**2
+    o = BelleII.obs
+    assert logLL_BelleII(x, *T_BELLE) == pytest.approx(2 * np.sum(e - o * np.log(e)) + penalty, rel=1e-12)
+
+    x = np.r_[1.2, 0.5, 0.3, 0.05 * rng.normal(size=NPAR_BaBar)]
+    e = sum(components_BaBar(x, *T_BABAR).values())
+    p, U, N = x[3:], NU_BaBar, BaBar.Nbins
+    th, (rec, NiB, Nnorm) = p[U : U + N], p[U + N :]
+    penalty = p[:U] @ p[:U] + np.sum((th * BaBar.b_tot / BaBar.b_sigma) ** 2)
+    penalty += (rec / BaBar.sigma_rec) ** 2 + (NiB / BaBar.sigma_NiB) ** 2 + (Nnorm / BaBar.sigma_Nnorm) ** 2
+    o = BaBar.obs
+    assert logLL_BaBar(x, *T_BABAR) == pytest.approx(2 * np.sum(e - o * np.log(e)) + penalty, rel=1e-12)
 
 
 def test_templates_unpack_into_the_likelihood():
