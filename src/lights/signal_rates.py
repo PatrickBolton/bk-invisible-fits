@@ -12,7 +12,7 @@ from tqdm import tqdm
 from lights.branching_fractions import dBdqsq_SM
 from lights.constants import mB, mK
 from lights.form_factors import A_VALS_GRDV, a_vals_gen, aK_cov_GRDV, aK_vals_GRDV, aKs_cov_GRDV, aKs_vals_GRDV
-from lights.load_data import BaBar, BelleII, eff_vals_gen, factorise, smearing
+from lights.load_data import BaBar, BelleII, BelleII_public, eff_vals_gen, factorise, smearing
 from lights.models import KS, B_tot, K, check_model, dBdqsq_tot
 
 
@@ -150,6 +150,62 @@ def Nrec_BaBar(model=None, *, include_SM=False, a_vals=A_VALS_GRDV, eff_vals=BaB
     return Nrec_vals
 
 
+### Belle II public likelihood (ITA) ###
+# Belle II released the joint number density nu0[x, k]: the expected SM signal events in each
+# bin x of its likelihood that were generated in true-q^2 bin k (load_data.BelleII_public).
+# Dividing by its SM branching fraction in each true-q^2 bin gives the expected events per
+# unit branching fraction, which applies to any B+ -> K+ + invisible signal: for a given q^2
+# the kaon kinematics does not depend on what the invisible system is. A model's signal is then
+#     N[x] = sum_k R[x, k] B_k,    R = nu0 / B_k(Belle II SM),
+# with B_k the model's branching fraction in true-q^2 bin k (kinematic reweighting,
+# arXiv:2402.08417, arXiv:2507.12393).
+_PUB_EDGES = BelleII_public.q2gen_bins[1:]  # the 100 physical true-q^2 bins, 0 ... 22.885 GeV^2
+_PUB_RESPONSE = BelleII_public.nu0[:, 1:] / BelleII_public.null_binned[1:]
+_PUB_NBINS = BelleII_public.nu0.shape[0]
+
+
+def _binned_rate(rate, threshold, npts=9):
+    "Integral of rate(q^2) (a vectorised function) over each true-q^2 bin, above the threshold."
+    lo, hi = np.maximum(_PUB_EDGES[:-1], threshold), _PUB_EDGES[1:]
+    q = np.linspace(lo, np.maximum(hi, lo), npts, axis=1)
+    return np.where(hi > lo, simpson(rate(q.ravel()).reshape(q.shape), x=q, axis=1), 0.0)
+
+
+def binned_B_BelleII_public(model=None, *, include_SM=False, a_vals=A_VALS_GRDV):
+    """Branching fraction of B+ -> K+ + invisible in each true-q^2 bin of the Belle II public likelihood.
+
+    A two-body signal is a delta function at q^2 = mX^2. Putting it all into the bin containing
+    mX^2 would make the prediction jump at every bin edge, so it is shared between the two
+    bins whose centres enclose mX^2, with linear weights: the expected events per unit
+    branching fraction (smooth in q^2) are interpolated linearly between bin centres. Below
+    the first and above the last centre it stays in the edge bin; beyond the last bin edge
+    (22.885 GeV^2, Belle II's kinematic endpoint) it is lost.
+    """
+    check_model(model)
+    B = np.zeros(len(_PUB_EDGES) - 1)
+    if _is_two_body(model) and 0 <= model.mX**2 <= _PUB_EDGES[-1]:
+        centres = (_PUB_EDGES[1:] + _PUB_EDGES[:-1]) / 2
+        q = np.clip(model.mX**2, centres[0], centres[-1])
+        k = min(np.searchsorted(centres, q, side="right") - 1, len(B) - 2)
+        t = (q - centres[k]) / (centres[k + 1] - centres[k])
+        B[k], B[k + 1] = (1 - t) * B_tot(model, a_vals)[K], t * B_tot(model, a_vals)[K]
+    if _is_three_body(model):
+        B += _binned_rate(lambda q: dBdqsq_tot(q, model, a_vals)[K], max(4 * model.mX**2, _QSQ_MIN))
+    if include_SM:
+        B += _binned_rate(lambda q: dBdqsq_SM(q, a_vals=a_vals)[K], _QSQ_MIN)
+    return B
+
+
+def Nrec_BelleII_public(model=None, *, include_SM=False, a_vals=A_VALS_GRDV, eff_vals=None):
+    """Number of B+ -> K+ invisible events in each bin of Belle II's public likelihood (ITA).
+
+    model: the new-physics Model (None: none); include_SM: add the SM signal. The efficiency
+    and resolution are those of Belle II's simulation, contained in the joint number density;
+    eff_vals is accepted for a uniform interface and ignored.
+    """
+    return _PUB_RESPONSE @ binned_B_BelleII_public(model, include_SM=include_SM, a_vals=a_vals)
+
+
 ### Theory uncertainty ###
 # Per experiment: its data and its binned prediction
 _DATA = {"BelleII": BelleII, "BaBar": BaBar}
@@ -199,16 +255,23 @@ A_eff_BaBar = factorise(BaBar.eff_cov)
 
 # Per experiment: (index of the varied form factor set in a_vals, efficiency values,
 #                  form factor basis, efficiency basis)
-_INPUTS = {"BelleII": (0, BelleII.eff_vals, A_aK, A_eff_BelleII), "BaBar": (1, BaBar.eff_vals, A_aKs, A_eff_BaBar)}
+# (The public Belle II likelihood has its efficiencies in the joint number density: form factors only.)
+_INPUTS = {
+    "BelleII": (0, BelleII.eff_vals, A_aK, A_eff_BelleII),
+    "BaBar": (1, BaBar.eff_vals, A_aKs, A_eff_BaBar),
+    "BelleII_public": (0, np.zeros(0), A_aK, np.zeros((0, 0))),
+}
+_NREC["BelleII_public"] = Nrec_BelleII_public
 
 NU_BelleII = A_aK.shape[1] + A_eff_BelleII.shape[1]  # number of input nuisance params.
 NU_BaBar = A_aKs.shape[1] + A_eff_BaBar.shape[1]
+NU_BelleII_public = A_aK.shape[1]
 
 
 def signal_template(experiment, model=None, *, include_SM=False, h=1.0):
     """Binned signal template s0 and its response J = ds/du to the input nuisance params.
 
-    experiment is "BelleII" or "BaBar"; model the new-physics Model (None: none);
+    experiment is "BelleII", "BaBar" or "BelleII_public"; model the new-physics Model (None: none);
     include_SM adds the SM signal. J is computed by central differences with step h (in
     units of u). The prediction is linear in the efficiencies and quadratic in the form
     factor coefficients, so central differences give the exact derivative.
@@ -238,3 +301,4 @@ def signal_template(experiment, model=None, *, include_SM=False, h=1.0):
 # SM templates and their responses to the input nuisance params.
 s_SM_BelleII, J_SM_BelleII = signal_template("BelleII", include_SM=True)
 s_SM_BaBar, J_SM_BaBar = signal_template("BaBar", include_SM=True)
+s_SM_BelleII_public, J_SM_BelleII_public = signal_template("BelleII_public", include_SM=True)

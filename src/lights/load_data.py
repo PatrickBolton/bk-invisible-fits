@@ -1,16 +1,20 @@
 """Experimental inputs: Belle II (B+ -> K+ E_miss, ITA) and BaBar (B0 -> K*0 E_miss).
 
 The data of each experiment is grouped in one object, BelleII or BaBar (see BelleIIData and
-BaBarData for the fields), e.g. BelleII.obs, BaBar.eff_vals. All q^2 values are in GeV^2.
+BaBarData for the fields), e.g. BelleII.obs, BaBar.eff_vals. BelleII_public holds Belle II's
+public likelihood and its reinterpretation material (see BelleIIPublicData). All q^2 values
+are in GeV^2.
 """
 
 import json
 from dataclasses import dataclass
 
 import numpy as np
+from scipy.integrate import simpson
 from scipy.interpolate import RectBivariateSpline
 
 from .constants import NB, mB
+from .paths import BELLE2_PUBLIC_DIR
 from .paths import BTOKEMISS_DIR as DATA_DIR  # Belle II and BaBar inputs
 
 
@@ -227,3 +231,89 @@ def _load_BaBar(Nbins=7):
 
 
 BaBar = _load_BaBar()
+
+
+### Belle II public likelihood (arXiv:2507.12393, HEPData ins2947386) ###
+def belle2_null_spectrum(qsq):
+    """dB/dq^2(B+ -> K+ nu nu-bar) [GeV^-2] of the SM prediction Belle II generated its signal with.
+
+    This is the null distribution of the released reinterpretation material (the joint number
+    densities are binned signal MC of this spectrum): eq. 16 of arXiv:2207.13371 with the f+
+    form factor of arXiv:2207.12468 (table V), as implemented in NullPrediction of
+    https://github.com/lorenzennio/knunu-reinterpretation-mini (scripts/utils.py). Its constants
+    differ slightly from lights.constants (e.g. mK = 0.495644 GeV, so the endpoint is at
+    22.885 GeV^2), and it integrates to B = 4.966e-6.
+    """
+    GF, alpha_ew, Xt, sw2, Vtb_Vts = 1.1663787e-5, 1 / 127.952, 1.468, 0.23124, 0.04185
+    m_B, m_K, m_Bs_star, tau_B = 5.279495, 0.4956440, 5.4158, 1.638e-12 / 6.58211e-25
+    a, N, log_sB = (0.2545, -0.71, 0.32), 3, 1.304
+
+    qsq = np.asarray(qsq, dtype=float)
+    t_plus = (m_B + m_K) ** 2
+    z = (np.sqrt(t_plus - qsq) - np.sqrt(t_plus)) / (np.sqrt(t_plus - qsq) + np.sqrt(t_plus))
+    fplus = sum(a[n] * (z**n - n / N * (-1) ** (n - N) * z**N) for n in range(N)) / (1 - qsq / m_Bs_star**2) * log_sB
+    lam = m_B**4 + m_K**4 + qsq**2 - 2 * (m_B**2 * m_K**2 + m_K**2 * qsq + m_B**2 * qsq)
+    norm = GF**2 * alpha_ew**2 * Xt**2 / (32 * np.pi**5 * sw2**2) * tau_B * Vtb_Vts**2
+    return norm * np.maximum(lam, 0) ** 1.5 / (2 * m_B) ** 3 * fplus**2
+
+
+@dataclass(frozen=True, eq=False)
+class BelleIIPublicData:
+    """Belle II's public B+ -> K+ nu nu-bar likelihood and its reinterpretation material.
+
+    workspace:   the pyhf (HistFactory JSON) workspace of the analysis, restricted to `channels`
+    channels:    the workspace channels used (here the ITA: regions A and B, on- and off-resonance)
+    q2gen_bins:  edges of the true-q^2 bins of the joint number densities: [-1, 0] for events
+                 outside the kinematic range, then 100 equal bins up to 22.885 GeV^2
+    nu0:         joint number density: expected SM signal events in each bin of the likelihood
+                 (rows, in channel order; zero in channels without signal) from each true-q^2
+                 bin (columns). The rows sum to the workspace's signal sample.
+    null_binned: Belle II's SM branching fraction in each true-q^2 bin (belle2_null_spectrum;
+                 the first, unphysical bin is 0)
+    """
+
+    workspace: dict
+    channels: tuple
+    q2gen_bins: np.ndarray
+    nu0: np.ndarray
+    null_binned: np.ndarray
+
+
+def _load_BelleII_public():
+    with open(BELLE2_PUBLIC_DIR / "combined_likelihood.json") as f:
+        spec = json.load(f)
+    # The ITA channels A (eta(BDT2) in [0.94, 1]) and B ([0.92, 0.94]), on- (Y4S) and off-resonance
+    channels = tuple(ch["name"] for ch in spec["channels"] if ch["name"][:3] in ("A__", "B__", "C__", "D__"))
+    workspace = {
+        "channels": [ch for ch in spec["channels"] if ch["name"] in channels],
+        "observations": [o for o in spec["observations"] if o["name"] in channels],
+        "measurements": spec["measurements"],
+        "version": spec["version"],
+    }
+
+    # Joint number densities of the signal regions, one row per bin of channels A and B
+    maps = {"A__": "number_density_ita_regA.csv", "B__": "number_density_ita_regB.csv"}
+    rows = []
+    for ch in workspace["channels"]:
+        nbins = len(ch["samples"][0]["data"])
+        if ch["name"][:3] in maps:
+            rows.append(load(BELLE2_PUBLIC_DIR / maps[ch["name"][:3]]).reshape(nbins, -1))
+        else:
+            rows.append(None)
+    ncols = next(r for r in rows if r is not None).shape[1]
+    nu0 = np.vstack(
+        [
+            r if r is not None else np.zeros((len(ch["samples"][0]["data"]), ncols))
+            for r, ch in zip(rows, workspace["channels"])
+        ]
+    )
+
+    q2gen_bins = np.r_[-1.0, np.linspace(0.0, 22.885, ncols)]
+    lo, hi = q2gen_bins[1:-1], q2gen_bins[2:]
+    q = np.linspace(lo, hi, 41, axis=1)
+    null_binned = np.r_[0.0, simpson(belle2_null_spectrum(q), x=q, axis=1)]
+
+    return BelleIIPublicData(workspace, channels, q2gen_bins, nu0, null_binned)
+
+
+BelleII_public = _load_BelleII_public()

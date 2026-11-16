@@ -8,12 +8,15 @@ import numpy as np
 from lights.likelihoods import (
     NPAR_BaBar,
     NPAR_BelleII,
+    NPAR_BelleII_public,
     grad_BaBar,
     grad_BelleII,
+    grad_BelleII_public,
     grad_Combined,
     grad_LEP,
     logLL_BaBar,
     logLL_BelleII,
+    logLL_BelleII_public,
     logLL_Combined,
     logLL_LEP,
     np_templates,
@@ -25,6 +28,7 @@ m1 = Model("phi", 1.0, CSL=1e-8, CSR=3e-9)
 m2 = Model("phiphi", 1.0, Lambda=1e4, CSL=1e-3)
 tB = np_templates("BelleII", m1, m2)
 tb = np_templates("BaBar", m1, m2)
+tP = np_templates("BelleII_public", m1, m2)
 
 
 def random_x(npar):
@@ -36,7 +40,7 @@ def check(name, f, g, x, h=1e-6):
     ga = g(x)
     gn = np.array([(f(x + h * np.eye(len(x))[i]) - f(x - h * np.eye(len(x))[i])) / (2 * h) for i in range(len(x))])
     err = np.max(np.abs(ga - gn) / (1 + np.abs(gn)))
-    print(f"{name:9s}: max relative error {err:.1e}  ({'OK' if err < 1e-4 else 'FAIL'})")
+    print(f"{name:14s}: max relative error {err:.1e}  ({'OK' if err < 1e-4 else 'FAIL'})")
     return err
 
 
@@ -50,5 +54,11 @@ for _ in range(3):
     x = random_x(NPAR_BelleII + NPAR_BaBar)
     x[3 + NPAR_BelleII - 3 : 3 + NPAR_BelleII] *= 0.05
     errs.append(check("Combined", lambda y: logLL_Combined(y, *tB, *tb), lambda y: grad_Combined(y, *tB, *tb), x))
+    x = random_x(NPAR_BelleII_public)
+    errs.append(
+        check(
+            "BelleII_public", lambda y: logLL_BelleII_public(y, *tP), lambda y: grad_BelleII_public(y, *tP), x, h=1e-5
+        )
+    )
     errs.append(check("LEP", lambda y: logLL_LEP(y, 3e-5, 1e-4), lambda y: grad_LEP(y, 3e-5, 1e-4), x[:5]))
 print("ALL OK" if max(errs) < 1e-4 else "SOME CHECKS FAILED")

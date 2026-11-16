@@ -19,4 +19,5 @@ if not (DATA_ROOT / "BtoKEmiss").is_dir():
 
 BTOKEMISS_DIR = DATA_ROOT / "BtoKEmiss"  # experimental inputs (Belle II, BaBar)
 FORM_FACTOR_DIR = DATA_ROOT / "form_factors"  # form factor coefficients and covariances
+BELLE2_PUBLIC_DIR = DATA_ROOT / "BelleII_public"  # Belle II public likelihood (HEPData ins2947386)
 PLOTS_DIR = PROJECT_ROOT / "plots"  # figure output

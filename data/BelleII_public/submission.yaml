@@ -1,0 +1,101 @@
+---
+additional_resources:
+- description: Created with hepdata_lib 0.20.0
+  location: https://doi.org/10.5281/zenodo.1217998
+- description: arXiv
+  location: https://arxiv.org/pdf/2507.12393
+- description: Combined likelihood in the HistFactory JSON format.
+  location: combined_likelihood.json
+  type: HistFactory
+- description: The joint number density useful for reinterpretation in terms of new
+    physics models (https://arxiv.org/abs/2402.08417). This is a 2d histogram of the
+    ITA signal samples in region A (bins of $\eta(\rm{BDT}_2) \in [0.94, 1.0001]$;
+    see the likelihood composition), binned in the kinematic variable $q^{2}_{\rm{gen}}$
+    and the fitting variables $q^{2}_{\rm{rec}} \times \eta(\rm{BDT}_2)$ (flattened).
+  location: number_density_ita_regA.csv
+- description: The joint number density useful for reinterpretation in terms of new
+    physics models (https://arxiv.org/abs/2402.08417). This is a 2d histogram of the
+    ITA signal samples in region B (bins of $\eta(\rm{BDT}_2) \in [0.92, 0.94]$; see
+    the likelihood composition), binned in the kinematic variable $q^{2}_{\rm{gen}}$
+    and the fitting variables $q^{2}_{\rm{rec}} \times \eta(\rm{BDT}_2)$ (flattened).
+  location: number_density_ita_regB.csv
+- description: The joint number density useful for reinterpretation in terms of new
+    physics models (https://arxiv.org/abs/2402.08417). This is a 2d histogram of the
+    HTA signal samples, binned in the kinematic variable $q^{2}_{\rm{gen}}$ and the
+    fitting variable $\eta(\rm{BDTh})$.
+  location: number_density_hta.csv
+- description: Repository with fitting and reinterpretaton examples.
+  location: https://github.com/lorenzennio/knunu-reinterpretation-mini
+comment: We recently measured the branching fraction of the $B^{+}\rightarrow K^{+}\nu\bar{\nu}$
+  decay using 362~fb$^{-1}$ of on-resonance $e^+e^-$ collision data under the assumption
+  of Standard Model kinematics, providing the first evidence for this decay. To facilitate
+  future reinterpretations and maximize the scientific impact of this measurement,
+  we publicly release the full analysis likelihood along with all necessary material
+  required for reinterpretation under arbitrary theoretical models sensitive to this
+  measurement.In this work, we demonstrate how the measurement can be reinterpreted
+  within the framework of the Weak Effective Theory. Using a kinematic reweighting
+  technique in combination with the published likelihood, we derive marginal posterior
+  distributions for the Wilson coefficients, construct credible intervals, and assess
+  the goodness of fit to the Belle~II data.For the Weak Effective Theory Wilson coefficients,
+  the posterior mode of the magnitudes $|C_\mathrm{VL}+C_\mathrm{VR}|$, $|C_\mathrm{SL}+C_\mathrm{SR}|$,
+  and $|C_\mathrm{TL}|$ corresponds to the point ${(11.3, 0.0, 8.2)}$. The respective
+  95\% credible intervals are $[1.9, 16.2]$, $[0.0, 15.4]$, and $[0.0, 11.2]$.
+data_license:
+  description: CC0 enables reusers to distribute, remix, adapt, and build upon the
+    material in any medium or format, with no conditions.
+  name: CC0
+  url: https://creativecommons.org/publicdomain/zero/1.0/
+record_ids:
+- id: 2947386
+  type: inspire
+---
+additional_resources:
+- description: Image file
+  location: number_density_ita.png
+- description: Thumbnail image file
+  location: thumb_number_density_ita.png
+data_file: joint_number_density_(ita).yaml
+description: The joint number density useful for reinterpretation in terms of new
+  physics models (https://arxiv.org/abs/2402.08417). This is a 2d histogram of the
+  ITA signal samples, combining both regions B (bins of $\eta(\rm{BDT}_2) \in [0.92,
+  0.94]$), binned in the kinematic variable $q^{2}_{\rm{gen}}$ and the fitting variables
+  $q^{2}_{\rm{rec}} \times \eta(\rm{BDT}_2)$ (flattened).
+keywords:
+- name: phrases
+  values:
+  - FCNC
+  - b --> sll transition
+  - electroweak penguin decay
+  - missing energy
+  - redist
+  - reinterpretation
+- name: reactions
+  values:
+  - $B^+ \rightarrow K^{+}\nu\bar\nu$
+location: Figure 1
+name: Joint number density (ITA)
+---
+additional_resources:
+- description: Image file
+  location: number_density_hta.png
+- description: Thumbnail image file
+  location: thumb_number_density_hta.png
+data_file: joint_number_density_(hta).yaml
+description: The joint number density useful for reinterpretation in terms of new
+  physics models (https://arxiv.org/abs/2402.08417). This is a 2d histogram of the
+  HTA signal samples, binned in the kinematic variable $q^{2}_{\rm{gen}}$ and the
+  fitting variable $\eta(\rm{BDTh})$.
+keywords:
+- name: phrases
+  values:
+  - FCNC
+  - b --> sll transition
+  - electroweak penguin decay
+  - missing energy
+  - redist
+  - reinterpretation
+- name: reactions
+  values:
+  - $B^+ \rightarrow K^{+}\nu\bar\nu$
+location: Additional material
+name: Joint number density (HTA)

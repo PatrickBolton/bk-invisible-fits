@@ -22,34 +22,52 @@ from lights.likelihoods import (
     LEP_mu,
     LEP_N_norm,
     LEP_sigma,
+    NH_pub,
+    NM_pub,
     NPAR_BaBar,
     NPAR_BelleII,
+    NPAR_BelleII_public,
     Templates,
     grad_BaBar,
     grad_BelleII,
+    grad_BelleII_public,
     grad_Combined,
     grad_LEP,
     logLL_BaBar,
     logLL_BelleII,
+    logLL_BelleII_public,
     logLL_Combined,
     logLL_LEP,
     np_templates,
+    stat_sigma_pub,
 )
 from lights.load_data import BaBar, BelleII
 from lights.models import B_Bs, check_model
-from lights.signal_rates import NU_BaBar, NU_BelleII
+from lights.signal_rates import NU_BaBar, NU_BelleII, NU_BelleII_public
 
 # Likelihood, gradient and number of parameters of each fit: "combined" is Belle II + BaBar
-# (the LEP term is added separately, see _lep_term)
-_LOGLL = {"BelleII": logLL_BelleII, "BaBar": logLL_BaBar, "combined": logLL_Combined}
-_GRAD = {"BelleII": grad_BelleII, "BaBar": grad_BaBar, "combined": grad_Combined}
-_NPAR = {"BelleII": 3 + NPAR_BelleII, "BaBar": 3 + NPAR_BaBar, "combined": 3 + NPAR_BelleII + NPAR_BaBar}
+# (the LEP term is added separately, see _lep_term); "BelleII_public" is Belle II's public
+# likelihood (ITA), an alternative to our "BelleII" likelihood
+_LOGLL = {
+    "BelleII": logLL_BelleII,
+    "BaBar": logLL_BaBar,
+    "combined": logLL_Combined,
+    "BelleII_public": logLL_BelleII_public,
+}
+_GRAD = {"BelleII": grad_BelleII, "BaBar": grad_BaBar, "combined": grad_Combined, "BelleII_public": grad_BelleII_public}
+_NPAR = {
+    "BelleII": 3 + NPAR_BelleII,
+    "BaBar": 3 + NPAR_BaBar,
+    "combined": 3 + NPAR_BelleII + NPAR_BaBar,
+    "BelleII_public": 3 + NPAR_BelleII_public,
+}
+EXPERIMENTS = ("BelleII", "BaBar", "BelleII_public")  # the single experiments of min_logLL, mass_scan, ...
 
 
 def _check_experiment(experiment):
-    'Raise a ValueError unless experiment is one of the single experiments, "BelleII" or "BaBar".'
-    if experiment not in ("BelleII", "BaBar"):
-        raise ValueError(f'Unknown experiment {experiment!r}; expected "BelleII" or "BaBar"')
+    "Raise a ValueError unless experiment is one of the single experiments (EXPERIMENTS)."
+    if experiment not in EXPERIMENTS:
+        raise ValueError(f"Unknown experiment {experiment!r}; expected one of {EXPERIMENTS}")
 
 
 class FitResult(NamedTuple):
@@ -98,17 +116,20 @@ N_START_EVENTS = 10.0  # expected NP signal events at the start of a fit with fr
 
 
 def _limits(kind):
-    """Parameter limits for a fit of the given kind ("BelleII", "BaBar", "combined").
+    """Parameter limits for a fit of the given kind ("BelleII", "BaBar", "combined", "BelleII_public").
 
     mu_SM >= 0; x1, x2 enter squared and are free; the input nuisances u are free (the
-    log-normal response keeps the prediction positive); the background modes z are limited to
-    +-5; multiplicative (1 + p) nuisance params are limited to p >= -1.
+    log-normal response keeps the prediction positive); the background modes z and the
+    histosys and normsys parameters of the public likelihood are limited to +-5 (as in pyhf);
+    multiplicative (1 + p) nuisance params are limited to p >= -1, and the staterror factors
+    gamma = 1 + sigma z of the public likelihood to gamma >= 0.
     """
     free = (None, None)
     belle = [free] * NU_BelleII + [_Z_LIM] * (3 * BelleII.Nbins) + [_P_LIM] * 3
     babar = [free] * NU_BaBar + [_P_LIM] * (BaBar.Nbins + 3)
+    public = [free] * NU_BelleII_public + [_Z_LIM] * (NH_pub + NM_pub) + [(-1 / s, None) for s in stat_sigma_pub]
     head = [(0.0, None), (None, None), (None, None)]
-    return head + {"BelleII": belle, "BaBar": babar, "combined": belle + babar}[kind]
+    return head + {"BelleII": belle, "BaBar": babar, "combined": belle + babar, "BelleII_public": public}[kind]
 
 
 def _x_init(kind, head=(1.0, 0.0, 0.0)):
@@ -163,6 +184,9 @@ def _fit(kind, templates, x_init, fixed, extra=None, errors=False):
     m.migrad(ncall=100000)
     if errors:
         m.hesse()
+        if not m.valid:  # Hesse's exact covariance showed the minimum is not yet converged: refine it
+            m.migrad(ncall=100000)
+            m.hesse()
     return m
 
 
@@ -179,10 +203,10 @@ def _normalise(tpl, target=100.0):
 
 
 # Fits of one experiment
-def min_logLL(experiment, model_1=None, model_2=None):
+def min_logLL(experiment, model_1=None, model_2=None, *, errors=True):
     """Minimise the log likelihood w.r.t. the SM signal strength or NP couplings and the nuisance parameters.
 
-    experiment: "BelleII" or "BaBar"
+    experiment: "BelleII", "BaBar" or "BelleII_public" (Belle II's public likelihood, ITA)
     model_1/2:  NP Models whose couplings are scaled by the fitted multipliers x1, x2
                 (signal strengths x1^2, x2^2). With no model, the SM signal strength mu_SM is
                 fitted; with one or two models, mu_SM = 1 and x1 (and x2) are fitted.
@@ -191,6 +215,13 @@ def min_logLL(experiment, model_1=None, model_2=None):
     multiplier(s) of the model(s), with delta_chi2 relative to the SM (mu_SM = 1, no NP). The
     NP templates are normalised internally (see _normalise), so the couplings inside the
     Minuit object are in normalised units; use value and error instead.
+
+    errors: compute the parameter errors (Hesse). Without them (error is None) the fit is
+    faster, which matters for the ~200 parameters of "BelleII_public".
+
+    The Minuit object of a "BelleII_public" fit may be flagged invalid with an EDM of ~1e-3:
+    its many nearly degenerate staterror and histosys directions converge slowly, but the
+    minimum is accurate to ~1e-4 in -2 ln L.
     """
     check_model(model_1, "model_1")
     check_model(model_2, "model_2")
@@ -207,12 +238,13 @@ def min_logLL(experiment, model_1=None, model_2=None):
 
     # Fit mu_SM (no NP), or the NP coupling(s) with mu_SM = 1, together with the nuisance params.
     fixed = {0: ["x1", "x2"], 1: ["x0", "x2"], 2: ["x0"]}[NP]
-    m = _fit(experiment, tpl, _x_init(experiment), fixed, errors=True)
+    m = _fit(experiment, tpl, _x_init(experiment), fixed, errors=errors)
     delta_chi2 = m.fval - profile_min_SM
+    err = m.errors if errors else [None] * 3
     if NP == 0:
-        return FitResult(m.values[0], m.errors[0], m, delta_chi2)
+        return FitResult(m.values[0], err[0], m, delta_chi2)
     value = tuple(m.values[k] * unscale[k - 1] for k in range(1, NP + 1))
-    error = tuple(m.errors[k] * unscale[k - 1] for k in range(1, NP + 1))
+    error = tuple(err[k] * unscale[k - 1] if errors else None for k in range(1, NP + 1))
     if NP == 1:
         value, error = value[0], error[0]
     return FitResult(value, error, m, delta_chi2)
@@ -221,7 +253,7 @@ def min_logLL(experiment, model_1=None, model_2=None):
 def profile_logLL_SM(experiment, mu):
     """Profile -2 Delta ln L of the SM signal strength mu (a number or an array of them).
 
-    experiment: "BelleII" or "BaBar". At each mu the nuisance params. are fitted; the result is relative to the global minimum,
+    experiment: "BelleII", "BaBar" or "BelleII_public". At each mu the nuisance params. are fitted; the result is relative to the global minimum,
     where mu is fitted too (computed once).
     """
     _check_experiment(experiment)
@@ -233,7 +265,7 @@ def profile_logLL_SM(experiment, mu):
 
 def _delta_chi2(experiment, model):
     "Delta chi^2 of the fit of one NP model (runs inside a joblib worker)."
-    return min_logLL(experiment, model).delta_chi2
+    return min_logLL(experiment, model, errors=False).delta_chi2
 
 
 def mass_scan(experiment, model, masses, *, n_jobs=-1):

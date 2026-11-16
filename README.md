@@ -19,7 +19,8 @@ uv sync            # creates .venv with the package (editable) and the dev tools
 uv run pytest      # runs the tests
 ```
 
-The experimental inputs and form factors are in `data/`. To use data stored elsewhere, set
+The experimental inputs and form factors are in `data/`, including Belle II's public likelihood
+(`data/BelleII_public/`, see its README). To use data stored elsewhere, set
 the environment variable `LIGHTS_DATA_DIR` to that directory.
 
 ## Usage
@@ -70,6 +71,7 @@ scan.BelleII, scan.BaBar, scan.LEP, scan.combined     # Delta chi^2 grids, index
 | `lights.signal_rates` | binned signal predictions and their response to the theory inputs |
 | `lights.likelihoods` | likelihoods and gradients (compiled with numba), NP signal templates |
 | `lights.fits` | fits, profile likelihoods, mass scans and coupling scans |
+| `lights.histfactory` | Belle II's public HistFactory (pyhf) likelihood as arrays for the compiled likelihood |
 | `lights.statistics` | reduced chi-squared of a fit |
 | `lights.plotting` | figure style and contour plots |
 
@@ -82,13 +84,19 @@ responds log-normally, so the theory uncertainties of the SM and NP signals are 
 The combined fit adds the Belle II, BaBar and LEP likelihoods. Fits use iminuit with analytic
 gradients (`lights.fits`); the likelihoods are compiled with numba.
 
+Belle II's public likelihood (arXiv:2507.12393) is available as the experiment
+`"BelleII_public"` (its inclusive-tag part) in `min_logLL`, `profile_logLL_SM` and
+`mass_scan`. Its HistFactory model is evaluated by a compiled reimplementation that agrees
+with pyhf, and new-physics signals are obtained by kinematic reweighting: Belle II's joint
+number density in true q^2 times the model's branching fraction in each q^2 bin.
+
 ## Notebooks
 
 | Notebook | Contents |
 | --- | --- |
 | `01_BR_plots` | branching fraction spectra of each channel |
-| `02_SM_fit` | inputs, SM fit to Belle II and the profile likelihood of mu_SM |
-| `03_NP_mass` | Belle II fits as a function of the new particle's mass |
+| `02_SM_fit` | inputs, SM fit to Belle II and the profile likelihood of mu_SM, also with Belle II's public likelihood |
+| `03_NP_mass` | Belle II fits as a function of the new particle's mass, compared with Belle II's public likelihood |
 | `04_NP_coupling` | coupling scans: Belle II, BaBar, LEP and combined contours |
 | `05_fit_predict` | normalised SM and NP spectra with form factor uncertainties |
 
