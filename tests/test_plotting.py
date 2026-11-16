@@ -11,7 +11,7 @@ import numpy as np
 
 from lights.fits import ScanResult, profile_logLL_scan
 from lights.models import Model
-from lights.plotting import plot_contours
+from lights.plotting import plot_combined_lines, plot_contours
 
 
 def toy_scan():
@@ -68,3 +68,14 @@ def test_plot_contours_skips_grids_that_were_not_computed():
     partial = ScanResult(None, full.BaBar, None, full.combined, full.x1, full.x2, full.models)
     handles = plot_contours(plt.subplots()[1], partial, lep=True)
     assert list(handles) == ["BaBar", "Combined"]
+
+
+def test_public_scans_are_labelled_and_can_be_compared():
+    full = toy_scan()
+    public = ScanResult(*full, full.x1, full.x2, full.models, belle2="public")
+    _, ax = plt.subplots()
+    handles = plot_contours(ax, public)
+    assert list(handles) == ["Belle II public", "BaBar", "Combined"]
+    line = plot_combined_lines(ax, full)
+    assert matplotlib.colors.to_rgba(line.get_color())[:3] == (0.0, 0.0, 0.0)
+    assert pickle.loads(pickle.dumps(public)).belle2 == "public"

@@ -113,3 +113,50 @@ def test_mass_scan_matches_single_fits():
     masses = [1.0, 2.1]
     scan = mass_scan("BelleII", GS, masses, n_jobs=2)
     assert scan == pytest.approx([min_logLL("BelleII", GS.with_mass(m)).delta_chi2 for m in masses], abs=1e-6)
+
+
+# Combined fits (Belle II + BaBar + LEP) and the choice of Belle II likelihood
+VV = Model("VV", 0.3, Lambda=3e2, CSL=1.0, CSR=1.0)  # B -> K only and no Bs -> invisible: BaBar and LEP are blind
+PSEUDO = Model("psipsi", 0.6, Lambda=1e4, CSL=-1.0, CSR=1.0)  # pseudoscalar current: Bs -> psi psi-bar > 0
+
+
+@pytest.mark.parametrize("belle2", ["BelleII", "BelleII_public"])
+def test_combined_fit_reduces_to_belle_II_when_BaBar_and_LEP_are_blind(belle2):
+    combined = "combined" if belle2 == "BelleII" else "combined_public"
+    assert min_logLL(combined, VV).delta_chi2 == pytest.approx(min_logLL(belle2, VV).delta_chi2, abs=2e-3)
+
+
+@pytest.mark.parametrize("experiment", ["combined", "combined_public"])
+def test_combined_fit_normalises_the_LEP_term_with_the_couplings(experiment):
+    # The fitted minimum, recomputed from the raw (unnormalised) templates and LEP term at the
+    # fitted coupling, must be the same: x_true^2 Br = x_fit^2 (Br / scale)
+    from lights.fits import _lep_term, _templates
+
+    assert PSEUDO.B_Bs() > 0
+    fit = min_logLL(experiment, PSEUDO)
+    raw = _fit(
+        experiment,
+        _templates(experiment, PSEUDO),
+        _x_init(experiment, (1.0, fit.value, 0.0)),
+        ["x0", "x1", "x2"],
+        extra=_lep_term((PSEUDO.B_Bs(), 0.0)),
+    )
+    assert raw.fval == pytest.approx(fit.minuit.fval, abs=2e-3)
+
+
+@pytest.mark.parametrize("belle2", ["lights", "public"])
+def test_scan_with_either_belle_II_likelihood(belle2):
+    # At the SM point (x = 0) the combined grid is -Delta chi^2 of the combined fit
+    res = profile_logLL_scan(PSEUDO, None, (-2, 2), (0, 0), pts=(5, 1), belle2=belle2, n_jobs=1)
+    assert res.belle2 == belle2 and res.x1[2] == 0
+    for name, grid in zip(res._fields, res):
+        assert grid.min() > -0.05, name
+    combined = "combined" if belle2 == "lights" else "combined_public"
+    assert res.combined[0, 2] == pytest.approx(-min_logLL(combined, PSEUDO).delta_chi2, abs=0.02)
+    with pytest.raises(ValueError, match="belle2"):
+        profile_logLL_scan(PSEUDO, None, (-1, 1), (0, 0), belle2="Belle")
+
+
+def test_mass_scan_of_the_combined_fit():
+    scan = mass_scan("combined_public", PSEUDO, [0.3, 0.6], n_jobs=1)
+    assert scan[1] == pytest.approx(min_logLL("combined_public", PSEUDO).delta_chi2, abs=1e-3)

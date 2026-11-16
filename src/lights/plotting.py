@@ -61,7 +61,9 @@ def plot_contours(ax, scan, scale=(1.0, 1.0), lep=False, color=0, shades=200, ma
 
     Draws the 1 sigma (Delta chi^2 = 2.3) contours of Belle II (dashed), BaBar (dotted) and,
     with lep = True, LEP (red, dotted), and the 1, 2 and 3 sigma contours and regions of the
-    combined fit; grids the scan did not compute are skipped. majorana: an optional second scan whose combined 1 sigma region is overlaid.
+    combined fit; grids the scan did not compute are skipped. majorana: an optional second
+    scan whose combined 1 sigma region is overlaid. The Belle II contour is labelled
+    "Belle II public" for scans with Belle II's public likelihood.
     The axes show the coupling multipliers x1, x2 of the scan times scale, e.g. the value of
     the coupling combination they stand for; the limits are the extent of the grid.
     color, shades: categorical_cmap colour index and number of shades of the combined fit.
@@ -72,8 +74,9 @@ def plot_contours(ax, scan, scale=(1.0, 1.0), lep=False, color=0, shades=200, ma
     handles = {}
 
     # 1 sigma contours of the single experiments (skipped if not in the scan)
+    belle2_label = "Belle II public" if getattr(scan, "belle2", "lights") == "public" else "Belle II"
     for label, grid, style in [
-        ("Belle II", scan.BelleII, {"cmap": "Greys", "linestyles": "--"}),
+        (belle2_label, scan.BelleII, {"cmap": "Greys", "linestyles": "--"}),
         ("BaBar", scan.BaBar, {"cmap": "Greys", "linestyles": ":"}),
         ("LEP", scan.LEP if lep else None, {"cmap": "Reds", "linestyles": ":"}),
     ]:
@@ -95,3 +98,13 @@ def plot_contours(ax, scan, scale=(1.0, 1.0), lep=False, color=0, shades=200, ma
     ax.set_xlim(X.min(), X.max())
     ax.set_ylim(Y.min(), Y.max())
     return handles
+
+
+def plot_combined_lines(ax, scan, scale=(1.0, 1.0), levels=SIGMA_LEVELS_2D, color="k", linestyles="-."):
+    """Contour lines (no fill) of the combined grid of a scan, e.g. to compare two likelihoods in one plot.
+
+    levels: Delta chi^2 levels (default the 1, 2, 3 sigma regions). Returns the legend handle.
+    """
+    X, Y = np.meshgrid(np.asarray(scan.x1) * scale[0], np.asarray(scan.x2) * scale[1])
+    cs = ax.contour(X, Y, scan.combined, levels=levels, colors=color, linestyles=linestyles, linewidths=1.2)
+    return cs.legend_elements()[0][0]

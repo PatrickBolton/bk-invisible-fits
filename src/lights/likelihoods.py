@@ -289,16 +289,23 @@ def grad_Combined(x, s1_B, s2_B, R1_B, R2_B, s1_b, s2_b, R1_b, R2_b):
 # II's signal form factor modifiers (corr_ff_c1-3, dropped), and Belle II's detector
 # systematics acting on it as relative shifts.
 #
-# Nuisance block p (length NPAR_BelleII_public), with U = NU_BelleII_public:
+# Nuisance block p (length NPAR_BelleII_public_full), with U = NU_BelleII_public:
 #   p[0:U]              u       input nuisance params. (B -> K form factors)
 #   p[U:U+H]            alpha   histosys params. (detector, background shapes), N(0, 1)
 #   p[U+H:U+H+M]        alpha   normsys params. (background normalisations), N(0, 1)
 #   p[U+H+M:]           z       staterror params., gamma = 1 + sigma z, N(0, 1)
+#
+# The 156 staterror factors gamma are profiled analytically (_gamma_hat_public): within a bin,
+# the Poisson term and their Gaussian constraints are minimised in closed form. The fitted
+# likelihoods (logLL_BelleII_public, logLL_Combined_public) therefore take only the first
+# NPAR_BelleII_public = U + H + M nuisance params.; the minimum over all params. is unchanged,
+# and Minuit fits ~50 instead of ~200 params.
 HF_BelleII_public = histfactory.build(BelleII_public.workspace, drop=("corr_ff_c1", "corr_ff_c2", "corr_ff_c3"))
 _hf = HF_BelleII_public
 Nbins_BelleII_public = len(_hf.obs)
 NH_pub, NM_pub, NG_pub = len(_hf.histosys_names), len(_hf.normsys_names), len(_hf.staterror_sigma)
-NPAR_BelleII_public = NU_BelleII_public + NH_pub + NM_pub + NG_pub
+NPAR_BelleII_public = NU_BelleII_public + NH_pub + NM_pub  # fitted (staterror factors profiled)
+NPAR_BelleII_public_full = NPAR_BelleII_public + NG_pub
 obs_pub, bkg_nom_pub = _hf.obs, _hf.bkg_nominal
 bkg_hs_up_pub, bkg_hs_dn_pub, sig_hs_up_pub, sig_hs_dn_pub = _hf.bkg_hs_up, _hf.bkg_hs_dn, _hf.sig_hs_up, _hf.sig_hs_dn
 bkg_ns_up_pub, bkg_ns_dn_pub, bkg_ns_coef_pub = _hf.bkg_ns_up, _hf.bkg_ns_dn, _hf.bkg_ns_coef
@@ -438,16 +445,136 @@ def _nll_BelleII_public(mu, p, s_NP_1, s_NP_2, R_NP_1, R_NP_2, want_grad):
 
 
 @nb.njit(**kwd)
+def _gamma_hat_public(mu, q, s_NP_1, s_NP_2, R_NP_1, R_NP_2):
+    """The staterror params. z (gamma = 1 + sigma z) minimising -2 ln L for the other params. q.
+
+    In each bin, lambda = c + sum_s a_s gamma_s, where a_s is the yield of sample s before its
+    staterror factor and c the yield of samples without one, and
+        f = 2 (lambda - n ln lambda) + sum_s ((gamma_s - 1) / sigma_s)^2.
+    df/dgamma_s = 0 gives gamma_s = 1 - sigma_s^2 a_s (1 - n / lambda), and then
+        lambda^2 - (K - V) lambda - V n = 0,   K = c + sum_s a_s,   V = sum_s sigma_s^2 a_s^2,
+    whose positive root is lambda. (Barlow-Beeston "lite", with one factor per sample.) A gamma_s
+    that would be negative is held at its bound 0, and the bin is solved again without it.
+    """
+    U, H, M, N = NU_BelleII_public, NH_pub, NM_pub, Nbins_BelleII_public
+    u, ah, am = q[0:U], q[U : U + H], q[U + H : U + H + M]
+    sig = _signals(s_SM_BelleII_public, R_SM_BelleII_public, s_NP_1, s_NP_2, R_NP_1, R_NP_2, u)
+    T = _mix(mu, sig)
+    S = len(bkg_nom_pub)
+
+    # Yields before the staterror factors: row 0 the signal, rows 1 ... S the backgrounds
+    a = np.zeros((S + 1, N))
+    for b in range(N):
+        r = 1.0
+        for h in range(H):
+            if sig_hs_up_pub[h, b] != 0 or sig_hs_dn_pub[h, b] != 0:
+                r += _code4p(ah[h], sig_hs_up_pub[h, b], sig_hs_dn_pub[h, b])[0]
+        a[0, b] = T[b] * r
+    for s in range(S):
+        F = 1.0
+        for k in range(M):
+            m = bkg_ns_idx_pub[s, k]
+            if m < 0:
+                break
+            F *= _code4(am[m], bkg_ns_up_pub[s, m], bkg_ns_dn_pub[s, m], bkg_ns_coef_pub[s, m])[0]
+        for b in range(bkg_bins_pub[s, 0], bkg_bins_pub[s, 1]):
+            A = bkg_nom_pub[s, b]
+            for k in range(H):
+                h = bkg_hs_idx_pub[s, k]
+                if h < 0:
+                    break
+                A += _code4p(ah[h], bkg_hs_up_pub[s, h, b], bkg_hs_dn_pub[s, h, b])[0]
+            a[s + 1, b] = A * F
+
+    z = np.zeros(NG_pub)
+    idx, ab, sg, free = np.empty(S + 1, np.int64), np.empty(S + 1), np.empty(S + 1), np.empty(S + 1, np.bool_)
+    for b in range(N):
+        c, n_s = 0.0, 0
+        for k in range(S + 1):
+            j = sig_stat_pub[b] if k == 0 else bkg_stat_pub[k - 1, b]
+            if j < 0:
+                c += a[k, b]
+            else:
+                idx[n_s], ab[n_s], sg[n_s], free[n_s] = j, a[k, b], stat_sigma_pub[j], True
+                n_s += 1
+        n = obs_pub[b]
+        while True:
+            K, V = c, 0.0
+            for i in range(n_s):
+                if free[i]:
+                    K += ab[i]
+                    V += (sg[i] * ab[i]) ** 2
+            d, root = K - V, np.sqrt((K - V) ** 2 + 4 * V * n)
+            lam = 0.5 * (d + root) if d >= 0 else 2 * V * n / (root - d)  # positive root, without cancellation
+            pull = 1 - n / lam if lam > 0 else 1.0
+            changed = False
+            for i in range(n_s):
+                if free[i] and 1 - sg[i] ** 2 * ab[i] * pull < 0:
+                    free[i], changed = False, True
+            if not changed:
+                break
+        for i in range(n_s):
+            gamma = 1 - sg[i] ** 2 * ab[i] * pull if free[i] else 0.0
+            z[idx[i]] = (gamma - 1) / sg[i]
+    return z
+
+
+@nb.njit(**kwd)
+def _nll_BelleII_public_profiled(mu, q, s_NP_1, s_NP_2, R_NP_1, R_NP_2, want_grad):
+    """-2 ln L of the public likelihood with the staterror factors profiled, and its gradient w.r.t. mu and q.
+
+    By the envelope theorem the gradient is that of the full likelihood at the profiled factors
+    (their own derivatives vanish there, or they sit at their bound).
+    """
+    p = np.concatenate((q, _gamma_hat_public(mu, q, s_NP_1, s_NP_2, R_NP_1, R_NP_2)))
+    f, d_mu, d_p = _nll_BelleII_public(mu, p, s_NP_1, s_NP_2, R_NP_1, R_NP_2, want_grad)
+    return f, d_mu, d_p[: len(q)] if want_grad else d_p
+
+
+@nb.njit(**kwd)
 def logLL_BelleII_public(x, s_NP_1, s_NP_2, R_NP_1, R_NP_2):
-    "-2 times the log likelihood (minus constant factors) of Belle II's public likelihood (ITA)."
-    return _nll_BelleII_public(_strengths(x), x[3:], s_NP_1, s_NP_2, R_NP_1, R_NP_2, False)[0]
+    "-2 times the log likelihood (minus constant factors) of Belle II's public likelihood (ITA), staterrors profiled."
+    return _nll_BelleII_public_profiled(_strengths(x), x[3:], s_NP_1, s_NP_2, R_NP_1, R_NP_2, False)[0]
 
 
 @nb.njit(**kwd)
 def grad_BelleII_public(x, s_NP_1, s_NP_2, R_NP_1, R_NP_2):
     "Gradient of logLL_BelleII_public w.r.t. x."
-    _, d_mu, d_p = _nll_BelleII_public(_strengths(x), x[3:], s_NP_1, s_NP_2, R_NP_1, R_NP_2, True)
-    return _chain(x, d_mu, d_p)
+    _, d_mu, d_q = _nll_BelleII_public_profiled(_strengths(x), x[3:], s_NP_1, s_NP_2, R_NP_1, R_NP_2, True)
+    return _chain(x, d_mu, d_q)
+
+
+@nb.njit(**kwd)
+def logLL_BelleII_public_full(x, s_NP_1, s_NP_2, R_NP_1, R_NP_2):
+    """-2 ln L of Belle II's public likelihood with the staterror params. z as explicit params.
+
+    x has NPAR_BelleII_public_full nuisance params. This is the HistFactory model itself (as
+    in pyhf), used to validate the profiling; the fits use logLL_BelleII_public.
+    """
+    return _nll_BelleII_public(_strengths(x), x[3:], s_NP_1, s_NP_2, R_NP_1, R_NP_2, False)[0]
+
+
+# Combined with the public Belle II likelihood: x[0:3], then the public Belle II nuisance block,
+# then the BaBar nuisance block (independent, as in logLL_Combined). Templates: the four public
+# Belle II ones, then the four BaBar ones.
+_PB_public = 3 + NPAR_BelleII_public  # start of the BaBar block
+
+
+@nb.njit(**kwd)
+def logLL_Combined_public(x, s1_B, s2_B, R1_B, R2_B, s1_b, s2_b, R1_b, R2_b):
+    "-2 times the log likelihood (minus constant factors) of Belle II's public likelihood and BaBar."
+    mu = _strengths(x)
+    belle = _nll_BelleII_public_profiled(mu, x[3:_PB_public], s1_B, s2_B, R1_B, R2_B, False)[0]
+    return belle + _nll_BaBar(mu, x[_PB_public:], s1_b, s2_b, R1_b, R2_b)
+
+
+@nb.njit(**kwd)
+def grad_Combined_public(x, s1_B, s2_B, R1_B, R2_B, s1_b, s2_b, R1_b, R2_b):
+    "Gradient of logLL_Combined_public w.r.t. x."
+    mu = _strengths(x)
+    _, d_mu_B, d_p_B = _nll_BelleII_public_profiled(mu, x[3:_PB_public], s1_B, s2_B, R1_B, R2_B, True)
+    d_mu_b, d_p_b = _nll_grad_BaBar(mu, x[_PB_public:], s1_b, s2_b, R1_b, R2_b)
+    return _chain(x, d_mu_B + d_mu_b, np.concatenate((d_p_B, d_p_b)))
 
 
 # LEP (Bs -> inv): Gaussian in the number of events N_norm * B(Bs -> inv)

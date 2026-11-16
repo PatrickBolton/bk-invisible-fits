@@ -13,11 +13,13 @@ from lights.likelihoods import (
     grad_BelleII,
     grad_BelleII_public,
     grad_Combined,
+    grad_Combined_public,
     grad_LEP,
     logLL_BaBar,
     logLL_BelleII,
     logLL_BelleII_public,
     logLL_Combined,
+    logLL_Combined_public,
     logLL_LEP,
     np_templates,
 )
@@ -40,7 +42,7 @@ def check(name, f, g, x, h=1e-6):
     ga = g(x)
     gn = np.array([(f(x + h * np.eye(len(x))[i]) - f(x - h * np.eye(len(x))[i])) / (2 * h) for i in range(len(x))])
     err = np.max(np.abs(ga - gn) / (1 + np.abs(gn)))
-    print(f"{name:14s}: max relative error {err:.1e}  ({'OK' if err < 1e-4 else 'FAIL'})")
+    print(f"{name:15s}: max relative error {err:.1e}  ({'OK' if err < 1e-4 else 'FAIL'})")
     return err
 
 
@@ -58,6 +60,16 @@ for _ in range(3):
     errs.append(
         check(
             "BelleII_public", lambda y: logLL_BelleII_public(y, *tP), lambda y: grad_BelleII_public(y, *tP), x, h=1e-5
+        )
+    )
+    x = random_x(NPAR_BelleII_public + NPAR_BaBar)
+    errs.append(
+        check(
+            "Combined_public",
+            lambda y: logLL_Combined_public(y, *tP, *tb),
+            lambda y: grad_Combined_public(y, *tP, *tb),
+            x,
+            h=1e-5,
         )
     )
     errs.append(check("LEP", lambda y: logLL_LEP(y, 3e-5, 1e-4), lambda y: grad_LEP(y, 3e-5, 1e-4), x[:5]))

@@ -17,7 +17,10 @@ from lights.likelihoods import (
     NPAR_BelleII_public,
     NU_BelleII_public,
     grad_BelleII_public,
+    grad_Combined_public,
     logLL_BelleII_public,
+    logLL_BelleII_public_full,
+    logLL_Combined_public,
     np_templates,
     stat_sigma_pub,
 )
@@ -67,7 +70,7 @@ def test_likelihood_matches_pyhf(pyhf_model):
         mu = rng.uniform(0, 6)
         ah, am, zs = rng.normal(0, 1.5, NH_pub), rng.normal(0, 1.5, NM_pub), rng.normal(0, 1, len(stat_sigma_pub))
         x = np.r_[0.0, np.sqrt(mu), 0.0, np.zeros(NU_BelleII_public), ah, am, zs]
-        ours.append(logLL_BelleII_public(x, *tpl))
+        ours.append(logLL_BelleII_public_full(x, *tpl))
         theirs.append(-2 * float(model.logpdf(to_pyhf(model, mu, ah, am, zs), data)[0]))
     ours, theirs = np.array(ours), np.array(theirs)
     # Large random shifts can make an expected yield negative: both are then NaN
@@ -100,12 +103,56 @@ def test_gradient_matches_finite_differences():
     assert np.max(np.abs(grad_BelleII_public(x, *t) - gn) / (1 + np.abs(gn))) < 1e-4
 
 
+def test_combined_gradient_matches_finite_differences():
+    from lights.likelihoods import NPAR_BaBar
+
+    models = Model("phi", 2.1, CSL=1e-8), Model("psipsi", 1.0, Lambda=1e4, CVL=1.0)
+    t = np_templates("BelleII_public", *models) + np_templates("BaBar", *models)
+    rng = np.random.default_rng(2)
+    x = np.r_[1.3, 0.7, -0.4, 0.7 * rng.normal(size=NPAR_BelleII_public), 0.05 * rng.normal(size=NPAR_BaBar)]
+    f = lambda y: logLL_Combined_public(y, *t)
+    h, e = 1e-5, np.eye(len(x))
+    gn = np.array([(f(x + h * e[i]) - f(x - h * e[i])) / (2 * h) for i in range(len(x))])
+    assert np.max(np.abs(grad_Combined_public(x, *t) - gn) / (1 + np.abs(gn))) < 1e-4
+
+
+# (couplings, random draw of the other nuisance params., whether some gamma reach their bound 0)
+@pytest.mark.parametrize(
+    "couplings, draw, bound", [((1.0, 0.0, 0.0), 0, False), ((1.0, 3.0, 2.0), 0, False), ((1.0, 100.0, 100.0), 2, True)]
+)
+def test_profiled_staterrors_minimise_the_full_likelihood(couplings, draw, bound):
+    # The analytic gamma minimise the full likelihood for the other params.: zero derivative, or
+    # a positive one where gamma sits at its bound 0 (which a huge signal can enforce)
+    from lights.likelihoods import _gamma_hat_public, _nll_BelleII_public, _strengths
+
+    t = np_templates("BelleII_public", Model("phi", 2.1, CSL=1e-8), Model("psipsi", 1.0, Lambda=1e4, CVL=1.0))
+    rng = np.random.default_rng(4)
+    for _ in range(draw + 1):
+        q = 0.5 * rng.normal(size=NPAR_BelleII_public)
+    x = np.r_[couplings, q]
+    mu = _strengths(x)
+    z = _gamma_hat_public(mu, q, *t)
+    d_z = _nll_BelleII_public(mu, np.r_[q, z], *t, True)[2][NPAR_BelleII_public:]
+    at_bound = np.isclose(z, -1 / stat_sigma_pub)
+    assert at_bound.any() == bound
+    # The derivative is a difference of terms of order sigma * (yield), ~1e6 for a huge signal
+    assert np.all(np.abs(d_z[~at_bound]) < 1e-9 * (1 + sum(mu) * 1e3))
+    assert np.all(d_z[at_bound] > 0)
+    # ... so any other gamma gives a larger -2 ln L
+    full = logLL_BelleII_public_full(np.r_[x, z], *t)
+    assert logLL_BelleII_public(x, *t) == pytest.approx(full, abs=1e-9)
+    for _ in range(5):
+        z2 = np.maximum(z + 0.3 * rng.normal(size=len(z)), -1 / stat_sigma_pub)
+        assert logLL_BelleII_public_full(np.r_[x, z2], *t) > full
+
+
 def test_SM_fit_reproduces_belle_II(pyhf_model):
     # pyhf fit of Belle II's ITA likelihood (its own SM signal and form factor uncertainties):
-    # mu = 5.42 +- 1.45 and -2 Delta ln L(mu = 0) = 12.50. Ours uses our SM shape and form factors.
+    # mu = 5.42 +- 1.45 and -2 Delta ln L(mu = 0) = 12.50. Ours uses our SM shape and form factors;
+    # its exact profile gives mu = 5.39 -1.48 +1.52 (the Hesse error is the parabolic 1.49).
     fit = min_logLL("BelleII_public")
     assert fit.value == pytest.approx(5.42, abs=0.06)
-    assert fit.error == pytest.approx(1.45, abs=0.03)
+    assert fit.error == pytest.approx(1.49, abs=0.02)
     assert profile_logLL_SM("BelleII_public", 0.0) == pytest.approx(12.50, abs=0.1)
 
 

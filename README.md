@@ -51,10 +51,15 @@ fit = min_logLL("BelleII", gS)
 # The NP fit as a function of the mass (in parallel)
 delta_chi2 = mass_scan("BelleII", gS, [0.5, 1.0, 2.1])
 
+# Experiments: "BelleII", "BelleII_public", "BaBar", and the combined fits "combined" and
+# "combined_public" (Belle II, BaBar and LEP, with the lights or the public Belle II likelihood)
+fit = min_logLL("combined_public", gS)
+
 # Profile likelihood on a grid of the multipliers of two models (in parallel)
 gP = Model("phi", mX = 2.1, CSL = 5e-9, CSR = -5e-9)
 scan = profile_logLL_scan(gS, gP, (-8, 8), (-30, 30), pts = (100, 100))
 scan.BelleII, scan.BaBar, scan.LEP, scan.combined     # Delta chi^2 grids, indexed [x2, x1]
+scan_public = profile_logLL_scan(gS, gP, (-8, 8), (-30, 30), belle2 = "public")   # Belle II's public likelihood
 ```
 
 `lights.plotting.plot_contours` draws the contours of a scan. Model objects are immutable;
@@ -86,7 +91,8 @@ gradients (`lights.fits`); the likelihoods are compiled with numba.
 
 Belle II's public likelihood (arXiv:2507.12393) is available as the experiment
 `"BelleII_public"` (its inclusive-tag part) in `min_logLL`, `profile_logLL_SM` and
-`mass_scan`. Its HistFactory model is evaluated by a compiled reimplementation that agrees
+`mass_scan`, in the combined fit `"combined_public"`, and in coupling scans with
+`profile_logLL_scan(..., belle2 = "public")`. Its HistFactory model is evaluated by a compiled reimplementation that agrees
 with pyhf, and new-physics signals are obtained by kinematic reweighting: Belle II's joint
 number density in true q^2 times the model's branching fraction in each q^2 bin.
 
@@ -97,7 +103,7 @@ number density in true q^2 times the model's branching fraction in each q^2 bin.
 | `01_BR_plots` | branching fraction spectra of each channel |
 | `02_SM_fit` | inputs, SM fit to Belle II and the profile likelihood of mu_SM, also with Belle II's public likelihood |
 | `03_NP_mass` | Belle II fits as a function of the new particle's mass, compared with Belle II's public likelihood |
-| `04_NP_coupling` | coupling scans: Belle II, BaBar, LEP and combined contours |
+| `04_NP_coupling` | coupling scans: Belle II, BaBar, LEP and combined contours, also with Belle II's public likelihood |
 | `05_fit_predict` | normalised SM and NP spectra with form factor uncertainties |
 
 Figures are saved to `plots/`.
