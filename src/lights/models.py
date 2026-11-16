@@ -198,6 +198,5 @@ def check_model(model, name="model", allow_none=True):
     if (model is None and allow_none) or isinstance(model, Model):
         return
     raise TypeError(
-        f"{name} must be a lights.models.Model{' or None' if allow_none else ''}, not {type(model).__name__} "
-        "(the 6 x 14 coupling arrays are no longer supported, e.g. use Model('phi', mX, CSL = ...))"
+        f"{name} must be a lights.models.Model{' or None' if allow_none else ''}, not {type(model).__name__}"
     )

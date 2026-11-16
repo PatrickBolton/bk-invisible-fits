@@ -66,11 +66,3 @@ def test_templates_unpack_into_the_likelihood():
     assert logLL_BelleII(x, *T_BELLE) == logLL_BelleII(
         x, T_BELLE.s_NP_1, T_BELLE.s_NP_2, T_BELLE.R_NP_1, T_BELLE.R_NP_2
     )
-
-
-def test_fit_functions_are_still_importable_from_likelihoods():
-    from lights import fits, likelihoods
-
-    assert likelihoods.min_logLL is fits.min_logLL and likelihoods.ScanResult is fits.ScanResult
-    with pytest.raises(AttributeError):
-        likelihoods.no_such_name  # noqa: B018

@@ -44,22 +44,12 @@ from lights.signal_rates import NU_BaBar, NU_BelleII
 _LOGLL = {"BelleII": logLL_BelleII, "BaBar": logLL_BaBar, "combined": logLL_Combined}
 _GRAD = {"BelleII": grad_BelleII, "BaBar": grad_BaBar, "combined": grad_Combined}
 _NPAR = {"BelleII": 3 + NPAR_BelleII, "BaBar": 3 + NPAR_BaBar, "combined": 3 + NPAR_BelleII + NPAR_BaBar}
-_KIND_BY_NAME = {"logLL_BelleII": "BelleII", "logLL_BaBar": "BaBar"}
 
 
-def _kind_of(experiment):
-    """Experiment name ("BelleII" or "BaBar") of an experiment name or likelihood function.
-
-    Functions are looked up by name, not object identity: joblib workers receive a pickled
-    copy of the function, which is a different object from the module-level one.
-    """
-    if isinstance(experiment, str):
-        name = experiment
-    else:
-        name = _KIND_BY_NAME.get(getattr(experiment, "__name__", None))
-    if name not in ("BelleII", "BaBar"):
+def _check_experiment(experiment):
+    'Raise a ValueError unless experiment is one of the single experiments, "BelleII" or "BaBar".'
+    if experiment not in ("BelleII", "BaBar"):
         raise ValueError(f'Unknown experiment {experiment!r}; expected "BelleII" or "BaBar"')
-    return name
 
 
 class FitResult(NamedTuple):
@@ -192,7 +182,7 @@ def _normalise(tpl, target=100.0):
 def min_logLL(experiment, model_1=None, model_2=None):
     """Minimise the log likelihood w.r.t. the SM signal strength or NP couplings and the nuisance parameters.
 
-    experiment: "BelleII" or "BaBar" (or the likelihood function logLL_BelleII / logLL_BaBar)
+    experiment: "BelleII" or "BaBar"
     model_1/2:  NP Models whose couplings are scaled by the fitted multipliers x1, x2
                 (signal strengths x1^2, x2^2). With no model, the SM signal strength mu_SM is
                 fitted; with one or two models, mu_SM = 1 and x1 (and x2) are fitted.
@@ -206,18 +196,18 @@ def min_logLL(experiment, model_1=None, model_2=None):
     check_model(model_2, "model_2")
     if model_1 is None and model_2 is not None:
         raise ValueError("Pass a single NP model as model_1")
+    _check_experiment(experiment)
     NP = (model_1 is not None) + (model_2 is not None)
-    kind = _kind_of(experiment)
 
-    tpl, scales = _normalise(np_templates(kind, model_1, model_2))
+    tpl, scales = _normalise(np_templates(experiment, model_1, model_2))
     unscale = 1 / np.sqrt(scales[0]), 1 / np.sqrt(scales[1])
 
     # Minimise w.r.t. nuisance params., keeping signal strength fixed to SM value (mu = 1)
-    profile_min_SM = _fit(kind, tpl, _x_init(kind), ["x0", "x1", "x2"]).fval
+    profile_min_SM = _fit(experiment, tpl, _x_init(experiment), ["x0", "x1", "x2"]).fval
 
     # Fit mu_SM (no NP), or the NP coupling(s) with mu_SM = 1, together with the nuisance params.
     fixed = {0: ["x1", "x2"], 1: ["x0", "x2"], 2: ["x0"]}[NP]
-    m = _fit(kind, tpl, _x_init(kind), fixed, errors=True)
+    m = _fit(experiment, tpl, _x_init(experiment), fixed, errors=True)
     delta_chi2 = m.fval - profile_min_SM
     if NP == 0:
         return FitResult(m.values[0], m.errors[0], m, delta_chi2)
@@ -231,14 +221,13 @@ def min_logLL(experiment, model_1=None, model_2=None):
 def profile_logLL_SM(experiment, mu):
     """Profile -2 Delta ln L of the SM signal strength mu (a number or an array of them).
 
-    experiment: "BelleII" or "BaBar" (or the likelihood function logLL_BelleII / logLL_BaBar).
-    At each mu the nuisance params. are fitted; the result is relative to the global minimum,
+    experiment: "BelleII" or "BaBar". At each mu the nuisance params. are fitted; the result is relative to the global minimum,
     where mu is fitted too (computed once).
     """
-    kind = _kind_of(experiment)
-    tpl = np_templates(kind)
-    global_min = _fit(kind, tpl, _x_init(kind), ["x1", "x2"]).fval
-    profile = [_fit(kind, tpl, _x_init(kind, (m, 0.0, 0.0)), ["x0", "x1", "x2"]).fval for m in np.ravel(mu)]
+    _check_experiment(experiment)
+    tpl = np_templates(experiment)
+    global_min = _fit(experiment, tpl, _x_init(experiment), ["x1", "x2"]).fval
+    profile = [_fit(experiment, tpl, _x_init(experiment, (m, 0.0, 0.0)), ["x0", "x1", "x2"]).fval for m in np.ravel(mu)]
     return np.reshape(profile, np.shape(mu)) - global_min
 
 
@@ -253,9 +242,9 @@ def mass_scan(experiment, model, masses, *, n_jobs=-1):
     At each mass m the coupling multiplier of model.with_mass(m) is fitted; the result is
     relative to the SM (mu_SM = 1, no NP), as in min_logLL.
     """
-    kind = _kind_of(experiment)
+    _check_experiment(experiment)
     check_model(model, allow_none=False)
-    jobs = (delayed(_delta_chi2)(kind, model.with_mass(m)) for m in tqdm(masses, desc=repr(model)))
+    jobs = (delayed(_delta_chi2)(experiment, model.with_mass(m)) for m in tqdm(masses, desc=repr(model)))
     return np.array(Parallel(n_jobs=n_jobs)(jobs))
 
 

@@ -6,7 +6,6 @@ import numpy as np
 import pytest
 
 from lights.fits import min_logLL
-from lights.likelihoods import logLL_BelleII
 from lights.models import B_Bs, B_tot, Model, dBdqsq_tot
 from lights.signal_rates import Nrec_BelleII
 
@@ -16,8 +15,6 @@ def test_unknown_channel_or_coupling_is_an_error():
         Model("scalar", 1.0)
     with pytest.raises(ValueError, match="has no coupling"):
         Model("phi", 1.0, CVL=1.0)  # vector coupling in the scalar channel
-    with pytest.raises(ValueError, match="has no coupling"):
-        Model("psipsi", 1.0, CSL_ff=1.0)  # old coupling-array style name
 
 
 def test_models_are_immutable_and_copyable():
@@ -48,8 +45,8 @@ def test_rates_follow_the_channel_kind():
     assert B_Bs(two) == 0 and B_Bs(three) > 0
 
 
-def test_coupling_arrays_are_rejected_with_a_hint():
-    with pytest.raises(TypeError, match="coupling arrays are no longer supported"):
-        Nrec_BelleII(np.zeros((6, 14)))
+def test_anything_but_a_model_is_rejected():
+    with pytest.raises(TypeError, match="model must be a lights.models.Model or None, not dict"):
+        Nrec_BelleII({"CSL": 1.0})
     with pytest.raises(TypeError, match="model_1 must be"):
-        min_logLL(logLL_BelleII, np.zeros((6, 14)))
+        min_logLL("BelleII", "phi")

@@ -1,13 +1,11 @@
 """Fits, profile likelihoods and scans."""
 
-import pickle
-
 import numpy as np
 import pytest
 from joblib import Parallel, delayed
 
-from lights.fits import _fit, _kind_of, _x_init, mass_scan, min_logLL, profile_logLL_scan, profile_logLL_SM
-from lights.likelihoods import components_BaBar, logLL_BelleII, np_templates
+from lights.fits import _fit, _x_init, mass_scan, min_logLL, profile_logLL_scan, profile_logLL_SM
+from lights.likelihoods import components_BaBar, np_templates
 from lights.load_data import BelleII
 from lights.models import Model
 from lights.statistics import reduced_chisq
@@ -15,34 +13,28 @@ from lights.statistics import reduced_chisq
 GS = Model("phi", 2.1, CSL=1e-8, CSR=1e-8)
 
 
-def test_kind_lookup_survives_pickling():
-    # joblib workers receive copies of the likelihood functions
-    assert _kind_of(pickle.loads(pickle.dumps(logLL_BelleII))) == "BelleII"
-    assert _kind_of("BaBar") == "BaBar"
-
-
 def test_SM_fit_regression():
-    fit = min_logLL(logLL_BelleII)
+    fit = min_logLL("BelleII")
     assert fit.minuit.valid
     assert fit.value == pytest.approx(5.086, abs=0.01)
     assert fit.error == pytest.approx(1.587, abs=0.01)
     assert -fit.delta_chi2 == pytest.approx(6.693, abs=0.01)
     _, _, m, _ = fit  # also unpacks as a tuple
     assert reduced_chisq(m, BelleII.obs) == pytest.approx(1.981, abs=0.01)
-    assert profile_logLL_SM(logLL_BelleII, 0.0) == pytest.approx(10.37, abs=0.02)
-    profile = profile_logLL_SM(logLL_BelleII, [0.0, fit.value])  # an array of mu in one call
+    assert profile_logLL_SM("BelleII", 0.0) == pytest.approx(10.37, abs=0.02)
+    profile = profile_logLL_SM("BelleII", [0.0, fit.value])  # an array of mu in one call
     assert profile.shape == (2,)
     assert profile == pytest.approx([10.37, 0.0], abs=0.02)
 
 
 def test_NP_fit_regression():
-    fit = min_logLL(logLL_BelleII, GS)
+    fit = min_logLL("BelleII", GS)
     assert abs(fit.value) == pytest.approx(1.571, abs=0.003)
     assert fit.delta_chi2 == pytest.approx(-20.05, abs=0.02)
 
 
 def test_NP_fit_in_parallel_workers():
-    fit = lambda model: min_logLL(logLL_BelleII, model).delta_chi2
+    fit = lambda model: min_logLL("BelleII", model).delta_chi2
     res = Parallel(n_jobs=2)(delayed(fit)(GS.with_mass(mX)) for mX in (1.0, 2.1))
     assert res[1] == pytest.approx(-20.05, abs=0.02)
 
@@ -50,8 +42,8 @@ def test_NP_fit_in_parallel_workers():
 def test_vanishing_template_is_still_fitted():
     # Templates ~ m_X^2 need large couplings; normalisation keeps them within reach of Migrad
     model = Model("PsiPsi", 1e-4, Lambda=1e2, CTPL=1.0, CTPR=-1.0)
-    d_small = min_logLL(logLL_BelleII, model).delta_chi2
-    d_ref = min_logLL(logLL_BelleII, model.with_mass(1e-2)).delta_chi2
+    d_small = min_logLL("BelleII", model).delta_chi2
+    d_ref = min_logLL("BelleII", model.with_mass(1e-2)).delta_chi2
     assert d_small < 0
     assert d_small == pytest.approx(d_ref, abs=0.01)
 
@@ -76,18 +68,18 @@ def test_scan_minimum_is_close_to_zero():
 
 
 def test_reduced_chisq_counts_free_strengths():
-    m_SM = min_logLL(logLL_BelleII).minuit
-    m_NP = min_logLL(logLL_BelleII, GS).minuit
+    m_SM = min_logLL("BelleII").minuit
+    m_NP = min_logLL("BelleII", GS).minuit
     assert reduced_chisq(m_SM, BelleII.obs) == pytest.approx(reduced_chisq(m_SM, BelleII.obs, 1))
     assert reduced_chisq(m_NP, BelleII.obs) == pytest.approx(reduced_chisq(m_NP, BelleII.obs, 1))  # x0 fixed, x1 free
     m_free = _fit("BelleII", np_templates("BelleII", GS), _x_init("BelleII"), ["x2"])
     assert reduced_chisq(m_free, BelleII.obs) == pytest.approx(reduced_chisq(m_free, BelleII.obs, 2))
 
 
-def test_experiment_names_and_functions_give_the_same_fit():
-    assert min_logLL("BelleII", GS).delta_chi2 == pytest.approx(min_logLL(logLL_BelleII, GS).delta_chi2, abs=1e-6)
-    with pytest.raises(ValueError, match="Unknown experiment"):
-        min_logLL("Belle", GS)
+def test_unknown_experiment_is_an_error():
+    for fit in (lambda e: min_logLL(e, GS), lambda e: profile_logLL_SM(e, 1.0), lambda e: mass_scan(e, GS, [1.0])):
+        with pytest.raises(ValueError, match="Unknown experiment"):
+            fit("Belle")
 
 
 def test_fit_leaves_the_zero_coupling_stationary_point():

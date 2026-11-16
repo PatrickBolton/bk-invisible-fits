@@ -386,23 +386,3 @@ def np_templates(experiment, model_1=None, model_2=None):
 
     (s1, R1), (s2, R2) = one(model_1), one(model_2)
     return _fill_zero(experiment, s1, s2, R1, R2)
-
-
-# The fits live in lights.fits; these names stay importable from here too
-_FIT_NAMES = (
-    "FitResult",
-    "ScanResult",
-    "SCAN_EXPERIMENTS",
-    "min_logLL",
-    "profile_logLL_SM",
-    "profile_logLL_scan",
-    "mass_scan",
-)
-
-
-def __getattr__(name):
-    if name in _FIT_NAMES:
-        from lights import fits
-
-        return getattr(fits, name)
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
