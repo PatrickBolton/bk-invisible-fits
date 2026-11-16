@@ -16,6 +16,7 @@ mKs = 0.89555  # K*(892)0 meson mass (the K* rates are for B0 -> K*0, with tauB0
 
 mb = 4.87  # b quark mass
 ms = 0.07966  # s quark mass
+mb_MSbar = 4.18  # MS-bar b quark mass m_b(m_b) (PDG), ~ m_b(mu_b = 4.2 GeV); used for the WET rates
 
 # Meson lifetimes
 tauB = (1.638e-12) / (6.582e-16) / (1e-9)  # B+- meson lifetime
@@ -26,6 +27,7 @@ fBs = 0.2303  # Bs meson decay constant (GeV)
 # SM neutrino coupling
 GF = 1.1663787e-5  # GeV^-2
 ALPHA = 1 / 127.952  # Fine structure constant
+ALPHA_MB = 1 / 133.0  # alpha_e(m_b): the normalisation of the WET coefficients of B -> K nu nu-bar (EOS)
 LAMBDAt = 0.04185  # Vtb Vts^* in SM
 Xt = 1.469  # NLO QCD and two-loop electroweak corrections
 SWsq = 0.23121  # Sine of weak mixing angle squared

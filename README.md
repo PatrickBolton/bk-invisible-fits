@@ -103,7 +103,7 @@ number density in true q^2 times the model's branching fraction in each q^2 bin.
 | `01_BR_plots` | branching fraction spectra of each channel |
 | `02_SM_fit` | inputs, SM fit to Belle II and the profile likelihood of mu_SM, also with Belle II's public likelihood |
 | `03_NP_mass` | Belle II fits as a function of the new particle's mass, compared with Belle II's public likelihood |
-| `04_NP_coupling` | coupling scans: Belle II, BaBar, LEP and combined contours, also with Belle II's public likelihood |
+| `04_NP_coupling` | coupling scans: Belle II, BaBar, LEP and combined contours, also with Belle II's public likelihood; the WET fit of Belle II's arXiv:2507.12393 (Fig. 3) |
 | `05_fit_predict` | normalised SM and NP spectra with form factor uncertainties |
 
 Figures are saved to `plots/`.

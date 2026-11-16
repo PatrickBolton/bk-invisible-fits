@@ -60,3 +60,20 @@ def test_random_toys_reproducible():
     a = ff.a_vals_gen(5, rng=3)
     b = ff.a_vals_gen(5, rng=3)
     assert all(np.array_equal(x[0], y[0]) and np.array_equal(x[1], y[1]) for x, y in zip(a, b))
+
+
+def test_WET_vector_coupling_is_the_SM():
+    # dB/dq^2 of B -> K nu nu-bar in the WET (arXiv:2507.12393 eq. 9) is the SM rate for
+    # C_V = Xt / sW^2 in the normalisation of dBdqsq_SM (alpha = 1/127.952), i.e. 6.60 in the WET
+    # normalisation with alpha_e(m_b) = 1/133 (EOS: 6.61)
+    from lights.constants import ALPHA, ALPHA_MB, SWsq, Xt
+
+    q = np.linspace(0.5, 22.0, 9)
+    CV_SM = Xt / SWsq * ALPHA / ALPHA_MB
+    assert CV_SM == pytest.approx(6.613, abs=0.01)
+    wet = Model("nunu", 0.0, CV=CV_SM).dBdqsq(q)
+    assert wet[0] == pytest.approx(dBdqsq_SM(q)[0], rel=1e-12)
+    assert np.all(wet[1:] == 0)  # K only
+    # the three couplings add incoherently
+    both = Model("nunu", 0.0, CS=2.0, CT=3.0).dBdqsq(q)[0]
+    assert both == pytest.approx(Model("nunu", 0.0, CS=2.0).dBdqsq(q)[0] + Model("nunu", 0.0, CT=3.0).dBdqsq(q)[0])

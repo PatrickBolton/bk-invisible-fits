@@ -27,6 +27,7 @@ from .branching_fractions import (  # K, KS, KS_L, KS_T: row indices, re-exporte
     B_Bsphiphi,
     B_Bspsipsi,
     K,  # noqa: F401
+    dBdqsq_BKnunu_WET,
     dBdqsq_BKphiphi,
     dBdqsq_BKPsiPsi,
     dBdqsq_BKpsipsi,
@@ -77,6 +78,9 @@ CHANNELS = {
         Channel("psipsi", "B -> K(*) psi psi-bar, fermion pair", _PSI, False, dBdqsq_BKpsipsi, B_Bspsipsi),
         Channel("VV", "B -> K V V-bar, vector pair (K only)", ("CSL", "CSR"), False, dBdqsq_BKVV),
         Channel(
+            "nunu", "B -> K nu nu-bar, weak effective theory (K only)", ("CV", "CS", "CT"), False, dBdqsq_BKnunu_WET
+        ),
+        Channel(
             "PsiPsi",
             "B -> K Psi Psi-bar, spin-3/2 pair (K only)",
             _PSI + ("CTSL", "CTSR", "CTPL", "CTPR"),
@@ -92,7 +96,7 @@ class Model:
 
     Model(channel, mX, Lambda = 1, is_ident = False, **couplings)
 
-    channel:   a key of CHANNELS ("phi", "V", "phiphi", "psipsi", "VV", "PsiPsi")
+    channel:   a key of CHANNELS ("phi", "V", "phiphi", "psipsi", "VV", "PsiPsi", "nunu")
     mX:        mass of the invisible particle(s) [GeV]
     Lambda:    scale of the effective operators [GeV]
     is_ident:  identical (real / Majorana) particles in the pair channels

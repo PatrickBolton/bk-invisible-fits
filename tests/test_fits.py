@@ -160,3 +160,18 @@ def test_scan_with_either_belle_II_likelihood(belle2):
 def test_mass_scan_of_the_combined_fit():
     scan = mass_scan("combined_public", PSEUDO, [0.3, 0.6], n_jobs=1)
     assert scan[1] == pytest.approx(min_logLL("combined_public", PSEUDO).delta_chi2, abs=1e-3)
+
+
+def test_scan_of_two_strengths_with_the_third_fitted():
+    from lights.fits import profile_logLL_strengths
+
+    S, T = Model("nunu", 0.0, CS=1.0), Model("nunu", 0.0, CT=1.0)
+    a, b = np.linspace(0, 3, 4), np.linspace(0, 16, 5)
+    grid = profile_logLL_strengths("BelleII_public", S, T, ("x0", "x2"), a, b, n_jobs=1)
+    assert grid.shape == (5, 4) and grid.min() > -1e-3
+    # No vector and no tensor signal is disfavoured even with the scalar fitted (Belle II's evidence
+    # for a signal; the scalar can take over part of it): the minimum has both
+    j, i = np.unravel_index(np.argmin(grid), grid.shape)
+    assert grid[0, 0] - grid.min() > 3 and a[i] > 0 and b[j] > 0
+    with pytest.raises(ValueError, match="two different parameters"):
+        profile_logLL_strengths("BelleII_public", S, T, ("x1", "x1"), a, b)

@@ -431,3 +431,49 @@ def profile_logLL_scan(
     return ScanResult(
         *(grids.get(name) for name in SCAN_EXPERIMENTS), x1_vals, x2_vals, (model_1, model_2), belle2=belle2
     )
+
+
+# Profile likelihood scans of two of the three strengths, the third fitted
+STRENGTHS = ("x0", "x1", "x2")  # mu_SM and the coupling multipliers of model_1 and model_2
+
+
+def _strength_point(kind, templates, scan, a, b, Br_LEP, global_min):
+    "-2 Delta ln L at ONE grid point of profile_logLL_strengths. This runs inside a worker."
+    head = np.array([1.0, 0.0, 0.0])
+    head[[STRENGTHS.index(scan[0]), STRENGTHS.index(scan[1])]] = a, b
+    extra = _lep_term(Br_LEP) if kind in _WITH_LEP else None
+    return _fit(kind, templates, _x_init(kind, head), list(scan), extra=extra).fval - global_min
+
+
+def profile_logLL_strengths(experiment, model_1, model_2, scan, values_a, values_b, *, n_jobs=-1):
+    """Profile -2 Delta ln L on a grid of two of the strength parameters, the third fitted (parallel over the grid).
+
+    The parameters are x0 = mu_SM (the SM signal strength, >= 0) and x1, x2 (the coupling
+    multipliers of model_1 and model_2, whose signal strengths are x1^2 and x2^2). scan names
+    the two scanned, e.g. ("x0", "x1"), with grid values values_a and values_b; the third and all
+    nuisance params. are fitted at each point. Unlike profile_logLL_scan (which fixes mu_SM = 1),
+    this lets the SM-like signal float, e.g. for a weak effective theory whose vector coupling
+    rescales the SM (|C_V|^2 = mu_SM C_V,SM^2).
+
+    experiment: one of EXPERIMENTS. Returns the grid indexed [b, a], relative to the global
+    minimum with all three strengths fitted.
+    """
+    _check_experiment(experiment)
+    check_model(model_1, "model_1")
+    check_model(model_2, "model_2")
+    if len(scan) != 2 or set(scan) - set(STRENGTHS) or scan[0] == scan[1]:
+        raise ValueError(f"scan must name two different parameters of {STRENGTHS}, not {scan!r}")
+    tpl = _templates(experiment, model_1, model_2)
+    Br_LEP = (B_Bs(model_1), B_Bs(model_2))
+    extra = _lep_term(Br_LEP) if experiment in _WITH_LEP else None
+    global_min = _fit(experiment, tpl, _x_init(experiment), [], extra=extra).fval
+
+    values_a, values_b = np.asarray(values_a, dtype=float), np.asarray(values_b, dtype=float)
+    jobs = (
+        delayed(_strength_point)(experiment, tpl, tuple(scan), a, b, Br_LEP, global_min)
+        for a in values_a
+        for b in values_b
+    )
+    gen = Parallel(n_jobs=n_jobs, return_as="generator")(jobs)
+    res = np.array(list(tqdm(gen, total=len(values_a) * len(values_b), desc=f"{experiment}, scan {scan}")))
+    return res.reshape(len(values_a), len(values_b)).T
