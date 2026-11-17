@@ -30,7 +30,7 @@ Lambda of the effective operators. Couplings not given are zero.
 
 ```python
 from lights.models import Model, CHANNELS
-from lights.fits import best_fit_model, fit_WET_vector, mass_scan, min_logLL, profile_logLL_scan
+from lights.fits import best_fit_model, fit_WET, fit_WET_vector, profile_logLL_WET, mass_scan, min_logLL, profile_logLL_scan
 
 gS = Model("phi", mX = 2.1, CSL = 5e-9, CSR = 5e-9)                   # B -> K phi
 fV = Model("psipsi", mX = 0.6, Lambda = 1e4, CVL = 1., CVR = 1.)       # B -> K psi psi-bar
@@ -61,8 +61,11 @@ fit = min_logLL("combined_public", gS)
 from lights.constants import CVL_SM
 wet = fit_WET_vector("combined", CVL = CVL_SM)    # C_VR, with C_VL at its SM value
 wet.CVR, wet.errors, wet.delta_chi2, wet.model    # wet.model: the total rate, SM included
+fit = fit_WET("combined")                         # all five: C_VL +- C_VR, C_SL +- C_SR, C_TL
+grid = profile_logLL_WET("combined", ("V+", "T"), values_a, values_b)   # two scanned, the other three profiled
 
-# Profile likelihood on a grid of the multipliers of two models (in parallel)
+# Likelihood on a grid of the multipliers of two models (in parallel): a slice, with mu_SM = 1 and
+# no other couplings (only the nuisance params. are fitted)
 gP = Model("phi", mX = 2.1, CSL = 5e-9, CSR = -5e-9)
 scan = profile_logLL_scan(gS, gP, (-8, 8), (-30, 30), pts = (100, 100))
 scan.BelleII, scan.BaBar, scan.LEP, scan.combined     # Delta chi^2 grids, indexed [x2, x1]
@@ -113,7 +116,7 @@ number density in true q^2 times the model's branching fraction in each q^2 bin.
 | `01_BR_plots` | branching fraction spectra of each channel |
 | `02_SM_fit` | inputs, SM fit to Belle II and the profile likelihood of mu_SM, also with Belle II's public likelihood |
 | `03_NP_mass` | Belle II fits as a function of the new particle's mass, compared with Belle II's public likelihood |
-| `04_NP_coupling` | coupling scans: Belle II, BaBar, LEP and combined contours, also with Belle II's public likelihood; the WET fit of Belle II's arXiv:2507.12393 (Fig. 3) |
+| `04_NP_coupling` | coupling scans: Belle II, BaBar, LEP and combined contours, also with Belle II's public likelihood; the WET fit of Belle II's arXiv:2507.12393 (Fig. 3), and of all WET couplings with BaBar |
 | `05_fit_predict` | normalised SM and NP spectra; SM + NP spectra at the best-fit couplings (invisible particles and WET), with coupling and form factor uncertainties |
 
 Figures are saved to `plots/`.

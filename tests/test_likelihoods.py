@@ -49,7 +49,11 @@ def test_gradients_match_finite_differences(kind):
             NPAR_BelleII + NPAR_BaBar,
         )
     else:
-        f, g, npar = ((lambda y: logLL_LEP(y, 3e-5, 1e-4)), (lambda y: grad_LEP(y, 3e-5, 1e-4)), 2)
+        f, g, npar = (
+            (lambda y: logLL_LEP(y, np.array([3e-5, 1e-4]))),
+            (lambda y: grad_LEP(y, np.array([3e-5, 1e-4]))),
+            2,
+        )
     x = np.concatenate(([1.3, 0.7, -0.4], 0.05 * rng.normal(size=npar)))
     gn = finite_difference(f, x)
     assert np.max(np.abs(g(x) - gn) / (1 + np.abs(gn))) < 1e-4
@@ -76,10 +80,24 @@ def test_components_sum_to_the_expected_events_of_the_likelihood():
 
 
 def test_templates_unpack_into_the_likelihood():
-    assert isinstance(T_BELLE, Templates) and T_BELLE.s_NP_1.shape == (20,)
-    empty = np_templates("BaBar")  # no models: zero templates of the right shape
-    assert not np.any(empty.s_NP_1) and empty.R_NP_2.shape == T_BABAR.R_NP_2.shape
+    assert isinstance(T_BELLE, Templates) and T_BELLE.s_NP.shape == (2, 20) and T_BELLE.n == 2
+    empty = np_templates("BaBar")  # no models: two zero templates of the right shape
+    assert not np.any(empty.s_NP) and empty.R_NP.shape == T_BABAR.R_NP.shape
     x = np.r_[1.0, 0.5, 0.3, np.zeros(NPAR_BelleII)]
-    assert logLL_BelleII(x, *T_BELLE) == logLL_BelleII(
-        x, T_BELLE.s_NP_1, T_BELLE.s_NP_2, T_BELLE.R_NP_1, T_BELLE.R_NP_2
-    )
+    assert logLL_BelleII(x, *T_BELLE) == logLL_BelleII(x, T_BELLE.s_NP, T_BELLE.R_NP)
+
+
+def test_more_templates_add_their_signals():
+    # n templates: x = (mu_SM, x_1 ... x_n, nuisances); a third template at coupling x3 adds x3^2 times
+    # its signal, so splitting a template in two (x^2 s = x^2 s/2 + x^2 s/2) leaves the likelihood unchanged
+    from lights.likelihoods import grad_BelleII
+
+    s, R = T_BELLE
+    three = (np.stack((s[0], s[1] / 2, s[1] / 2)), np.stack((R[0], R[1], R[1])))
+    rng = np.random.default_rng(5)
+    q = 0.1 * rng.normal(size=NPAR_BelleII)
+    x2, x3 = np.r_[1.0, 0.5, 0.3, q], np.r_[1.0, 0.5, 0.3, 0.3, q]
+    assert logLL_BelleII(x3, *three) == pytest.approx(logLL_BelleII(x2, *T_BELLE), rel=1e-12)
+    g2, g3 = grad_BelleII(x2, *T_BELLE), grad_BelleII(x3, *three)
+    assert g3[[0, 1]] == pytest.approx(g2[[0, 1]], rel=1e-10) and g3[4:] == pytest.approx(g2[3:], rel=1e-10, abs=1e-12)
+    assert g3[2] + g3[3] == pytest.approx(g2[2], rel=1e-10)

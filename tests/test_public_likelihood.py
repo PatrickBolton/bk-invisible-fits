@@ -63,7 +63,7 @@ def test_likelihood_matches_pyhf(pyhf_model):
     # compiled likelihood must then be pyhf's, also for |alpha| > 1 where the interpolation changes
     model, data = pyhf_model
     z, zR = np.zeros(len(HF.obs)), np.zeros((len(HF.obs), NU_BelleII_public))
-    tpl = (HF.signal_nominal, z, zR, zR)
+    tpl = (np.stack((HF.signal_nominal, z)), np.stack((zR, zR)))
     rng = np.random.default_rng(3)
     ours, theirs = [], []
     for trial in range(10):
@@ -130,7 +130,7 @@ def test_profiled_staterrors_minimise_the_full_likelihood(couplings, draw, bound
     for _ in range(draw + 1):
         q = 0.5 * rng.normal(size=NPAR_BelleII_public)
     x = np.r_[couplings, q]
-    mu = _strengths(x)
+    mu = _strengths(x, 2)
     z = _gamma_hat_public(mu, q, *t)
     d_z = _nll_BelleII_public(mu, np.r_[q, z], *t, True)[2][NPAR_BelleII_public:]
     at_bound = np.isclose(z, -1 / stat_sigma_pub)

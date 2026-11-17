@@ -72,5 +72,5 @@ for _ in range(3):
             h=1e-5,
         )
     )
-    errs.append(check("LEP", lambda y: logLL_LEP(y, 3e-5, 1e-4), lambda y: grad_LEP(y, 3e-5, 1e-4), x[:5]))
+    errs.append(check("LEP", lambda y: logLL_LEP(y, np.array([3e-5, 1e-4])), lambda y: grad_LEP(y, np.array([3e-5, 1e-4])), x[:5]))
 print("ALL OK" if max(errs) < 1e-4 else "SOME CHECKS FAILED")

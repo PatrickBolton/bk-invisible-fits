@@ -51,7 +51,7 @@ def test_vanishing_template_is_still_fitted():
 def test_nuisances_cannot_cancel_a_large_signal():
     tpl = np_templates("BaBar", Model("phi", 2.1, CSL=5e-9, CSR=5e-9), Model("phi", 2.1, CSL=5e-9, CSR=-5e-9))
     m = _fit("BaBar", tpl, _x_init("BaBar", (1.0, 6.9, 25.8)), ["x0", "x1", "x2"])
-    nominal = 25.8**2 * tpl.s_NP_2
+    nominal = 25.8**2 * tpl.s_NP[1]
     fitted = components_BaBar(m.values, *tpl)["NP_2"]
     k = np.argmax(nominal)
     assert fitted[k] > 0.3 * nominal[k]
@@ -241,3 +241,33 @@ def test_fits_reject_couplings_that_interfere_with_the_SM():
         with pytest.raises(ValueError, match="interferes"):
             profile_logLL_scan(model, None, (0, 1), (0, 1), pts=(2, 2), experiments=("BelleII",), n_jobs=1)
     min_logLL("BelleII", Model("nunu", 0.0, CTL=1.0))  # scalar and tensor couplings do not interfere
+
+
+def test_WET_rate_is_a_sum_of_five_templates():
+    # Massless neutrinos: no interference between C_VL +- C_VR, C_SL +- C_SR and C_TL
+    from lights.fits import _WET_BASIS, wet_model
+
+    q = np.linspace(0.05, 22.5, 25)
+    rng = np.random.default_rng(0)
+    for _ in range(5):
+        c = rng.normal(0, 5, 5)
+        total = sum(ci**2 * m.dBdqsq(q) for ci, m in zip(c, _WET_BASIS))
+        assert wet_model(c).dBdqsq(q) == pytest.approx(total, rel=1e-12, abs=1e-12 * np.abs(total).max())
+
+
+def test_WET_fit_of_all_couplings():
+    from lights.fits import WET_COUPLINGS, fit_WET, fit_WET_vector, profile_logLL_WET
+
+    # With the scalar and tensor couplings fixed at 0, the vector fit
+    fit = fit_WET("combined", **{"S+": 0.0, "S-": 0.0, "T": 0.0})
+    assert fit.delta_chi2 == pytest.approx(fit_WET_vector("combined").delta_chi2, abs=1e-3)
+    # All five: the vector coupling carries Belle II's excess with the lights likelihood
+    fit = fit_WET("combined")
+    assert fit.minuit.valid and list(fit.couplings) == list(WET_COUPLINGS)
+    assert fit.couplings["V+"] == pytest.approx(14.6, abs=0.2) and fit.delta_chi2 == pytest.approx(-7.0, abs=0.1)
+    # Profile grid: >= 0, zero at the grid point nearest the best fit (up to the grid spacing)
+    a, b = np.linspace(0, 24, 7), np.linspace(0, 8, 5)
+    grid = profile_logLL_WET("combined", ("V+", "T"), a, b, n_jobs=1)
+    assert grid.shape == (5, 7) and grid.min() > -1e-3 and grid.min() < 0.5
+    with pytest.raises(ValueError, match="WET couplings"):
+        profile_logLL_WET("combined", ("V+", "C"), a, b)

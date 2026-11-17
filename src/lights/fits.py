@@ -14,8 +14,16 @@ fitted multipliers x1, x2 (signal strengths x1^2, x2^2).
     best_fit_model("BelleII", model)           the model with its couplings at their best fit
     profile_logLL_SM("BelleII", mu)            profile likelihood of mu_SM
     mass_scan("BelleII", model, masses)        NP fit as a function of the mass
-    profile_logLL_scan(model_1, model_2, ...)  Delta chi^2 grids of two coupling multipliers
+    profile_logLL_scan(model_1, model_2, ...)  Delta chi^2 grids of two coupling multipliers (a slice: mu_SM = 1,
+                                               no other couplings)
     fit_WET_vector("combined", CVL = CVL_SM)   fit of the WET vector couplings C_VL, C_VR (SM included)
+    fit_WET("combined")                        fit of all WET couplings (C_VL +- C_VR, C_SL +- C_SR, C_TL)
+    profile_logLL_WET("combined", pair, a, b)  Delta chi^2 grid of two WET couplings, the other three profiled
+
+Slices and profiles: profile_logLL_scan fixes mu_SM = 1 and has no couplings besides the two
+scanned, so its grids are slices for a scenario with just these couplings. profile_logLL_strengths
+and profile_logLL_WET fit the remaining strengths or couplings at each grid point (profiles), so
+their grids also reflect what those do. The nuisance params. are profiled in all of them.
 
 The NP rates add to the SM, so these models must not interfere with the SM: the invisible
 particles (different final states) and the scalar and tensor WET operators. The vector WET
@@ -83,12 +91,12 @@ _GRAD = {
     "combined": grad_Combined,
     "combined_public": grad_Combined_public,
 }
-_NPAR = {
-    "BelleII": 3 + NPAR_BelleII,
-    "BelleII_public": 3 + NPAR_BelleII_public,
-    "BaBar": 3 + NPAR_BaBar,
-    "combined": 3 + NPAR_BelleII + NPAR_BaBar,
-    "combined_public": 3 + NPAR_BelleII_public + NPAR_BaBar,
+_NUISANCES = {  # number of nuisance params.; a fit with n NP templates has 1 + n more (mu_SM, couplings)
+    "BelleII": NPAR_BelleII,
+    "BelleII_public": NPAR_BelleII_public,
+    "BaBar": NPAR_BaBar,
+    "combined": NPAR_BelleII + NPAR_BaBar,
+    "combined_public": NPAR_BelleII_public + NPAR_BaBar,
 }
 _WITH_LEP = ("combined", "combined_public")
 EXPERIMENTS = tuple(_PARTS)  # the experiments of min_logLL, profile_logLL_SM and mass_scan
@@ -111,15 +119,15 @@ def _check_no_interference(*models):
             )
 
 
-def _templates(experiment, model_1=None, model_2=None, *, interfering=False):
+def _templates(experiment, *models, interfering=False):
     """NP Templates of a fit: one Templates, or a tuple of them for the combined fits (see _PARTS).
 
     Models that interfere with the SM are rejected (see _check_no_interference), unless
     interfering is True (fit_WET_vector, which includes the SM in them).
     """
     if not interfering:
-        _check_no_interference(model_1, model_2)
-    parts = tuple(np_templates(e, model_1, model_2) for e in _PARTS[experiment])
+        _check_no_interference(*models)
+    parts = tuple(np_templates(e, *models) for e in _PARTS[experiment])
     return parts[0] if len(parts) == 1 else parts
 
 
@@ -169,10 +177,10 @@ _P_LIM = (-1.0, None)  # multiplicative nuisance params entering as (1 + p)
 N_START_EVENTS = 10.0  # expected NP signal events at the start of a fit with free couplings
 
 
-def _limits(kind):
-    """Parameter limits for a fit of the given kind (one of EXPERIMENTS).
+def _limits(kind, n=2):
+    """Parameter limits for a fit of the given kind (one of EXPERIMENTS) with n NP templates.
 
-    mu_SM >= 0; x1, x2 enter squared and are free; the input nuisances u are free (the
+    mu_SM >= 0; the couplings x1 ... xn enter squared and are free; the input nuisances u are free (the
     log-normal response keeps the prediction positive); the background modes z and the
     histosys and normsys parameters of the public likelihood are limited to +-5 (as in pyhf);
     multiplicative (1 + p) nuisance params are limited to p >= -1. (The staterror factors of
@@ -182,34 +190,40 @@ def _limits(kind):
     belle = [free] * NU_BelleII + [_Z_LIM] * (3 * BelleII.Nbins) + [_P_LIM] * 3
     babar = [free] * NU_BaBar + [_P_LIM] * (BaBar.Nbins + 3)
     public = [free] * NU_BelleII_public + [_Z_LIM] * (NH_pub + NM_pub)  # staterror factors are profiled
-    head = [(0.0, None), (None, None), (None, None)]
+    head = [(0.0, None)] + [(None, None)] * n
     blocks = {"BelleII": belle, "BelleII_public": public, "BaBar": babar}
     return head + [lim for part in _PARTS[kind] for lim in blocks[part]]
 
 
 def _x_init(kind, head=(1.0, 0.0, 0.0)):
-    "Initial parameter vector: the given (mu_SM, x1, x2) and all nuisance params at 0."
-    x = np.zeros(_NPAR[kind])
-    x[:3] = head
+    "Initial parameter vector: the given (mu_SM, x1, ..., xn) and all nuisance params at 0."
+    x = np.zeros(len(head) + _NUISANCES[kind])
+    x[: len(head)] = head
     return x
+
+
+def _parts(templates):
+    "The Templates of a fit as a tuple (one per likelihood of _PARTS)."
+    return (templates,) if isinstance(templates, Templates) else tuple(templates)
 
 
 def _objective(kind, templates, extra=None, head=None):
     """-2 ln L of a fit and its gradient, as functions of the fitted parameter vector.
 
-    head: optional 3 x 3 matrix A; the fitted parameters are then theta with
-    x[0:3] = A theta[0:3] (the nuisance params. are unchanged), e.g. the WET vector couplings
-    (see fit_WET_vector). The gradient follows by the chain rule, A^T dF/dx[0:3].
+    head: optional (1 + n) x (1 + n) matrix A, for n NP templates; the fitted parameters are then
+    theta with x[0:1+n] = A theta[0:1+n] (the nuisance params. are unchanged), e.g. the WET
+    vector couplings (see fit_WET_vector). The gradient follows by the chain rule, A^T dF/dx[0:1+n].
     """
-    parts = (templates,) if isinstance(templates, Templates) else tuple(templates)
+    parts = _parts(templates)
     args = tuple(np.ascontiguousarray(a, dtype=float) for t in parts for a in t)
     logLL, grad = _LOGLL[kind], _GRAD[kind]
+    h = 1 + parts[0].n
 
     def to_x(theta):
         if head is None:
             return theta
         x = np.array(theta, dtype=float)
-        x[:3] = head @ x[:3]
+        x[:h] = head @ x[:h]
         return x
 
     def func(theta):
@@ -220,7 +234,7 @@ def _objective(kind, templates, extra=None, head=None):
         x = to_x(theta)
         g = grad(x, *args) + (extra[1](x) if extra is not None else 0.0)
         if head is not None:
-            g[:3] = head.T @ g[:3]
+            g[:h] = head.T @ g[:h]
         return g
 
     return func, gfunc
@@ -231,9 +245,9 @@ def _fit(kind, templates, x_init, fixed, extra=None, head=None):
 
     kind:      one of EXPERIMENTS
     templates: the NP Templates of the experiment; for the combined fits a pair (Belle II, BaBar)
-    fixed:     names of the fixed parameters among x0 (mu_SM), x1, x2
+    fixed:     names of the fixed parameters among x0 (mu_SM) and the couplings x1 ... xn
     extra:     optional (f, grad) added to the likelihood (e.g. LEP, see _lep_term)
-    head:      optional linear map of the first three fitted params. to (mu_SM, x1, x2) (see
+    head:      optional linear map of the first 1 + n fitted params. to (mu_SM, x1, ..., xn) (see
                _objective); they are then free (unless fixed), and x_init is in the fitted params.
 
     The analytic gradient is passed to Migrad, which runs with strategy 0: the minimum is
@@ -241,12 +255,13 @@ def _fit(kind, templates, x_init, fixed, extra=None, head=None):
     _errors for the parameter errors). A free NP coupling whose templates are all zero does not affect the likelihood and is fixed, to
     keep the Hessian non-singular (unless an extra term, such as LEP, may depend on it).
     """
-    parts = (templates,) if isinstance(templates, Templates) else tuple(templates)
+    parts = _parts(templates)
+    n = parts[0].n
     func, gfunc = _objective(kind, templates, extra, head)
     if head is not None:
         m = Minuit(func, np.array(x_init, dtype=float), grad=gfunc)
         m.errordef = 1.0
-        m.limits = [(None, None)] * 3 + _limits(kind)[3:]
+        m.limits = [(None, None)] * (1 + n) + _limits(kind, n)[1 + n :]
         if fixed:
             m.fixed[list(fixed)] = True
         m.strategy = 0
@@ -254,20 +269,20 @@ def _fit(kind, templates, x_init, fixed, extra=None, head=None):
         m.migrad(ncall=100000)
         return m
 
-    # Expected NP events at unit coupling, summed over the experiments, for x1 and x2
-    n_events = [sum(float(np.sum(t.s_NP_1)) for t in parts), sum(float(np.sum(t.s_NP_2)) for t in parts)]
-    flat = [f"x{k}" for k in (1, 2) if f"x{k}" not in fixed and n_events[k - 1] == 0 and extra is None]
+    # Expected NP events at unit coupling, summed over the experiments, for each coupling
+    n_events = [sum(float(np.sum(t.s_NP[k])) for t in parts) for k in range(n)]
+    flat = [f"x{k}" for k in range(1, n + 1) if f"x{k}" not in fixed and n_events[k - 1] == 0 and extra is None]
 
-    # The NP strengths are x1^2 and x2^2, so x = 0 is a stationary point where Migrad can stop
+    # The NP strengths are x_k^2, so x = 0 is a stationary point where Migrad can stop
     # without moving. A free coupling starting at 0 starts at N_START_EVENTS expected events instead.
     x_init = np.array(x_init, dtype=float)
-    for k in (1, 2):
+    for k in range(1, n + 1):
         if f"x{k}" not in fixed and f"x{k}" not in flat and x_init[k] == 0:
             x_init[k] = np.sqrt(N_START_EVENTS / n_events[k - 1]) if n_events[k - 1] > 0 else 1.0
 
     m = Minuit(func, x_init, grad=gfunc)
     m.errordef = 1.0
-    m.limits = _limits(kind)
+    m.limits = _limits(kind, n)
     m.fixed[list(fixed) + flat] = True
     m.strategy = 0
     m.tol = 0.01  # EDM < 2e-5: Delta chi^2 accurate to ~1e-5 (the default 0.1 left up to ~1e-4)
@@ -309,13 +324,14 @@ def _normalise(tpl, target=100.0):
     The coupling then enters as x_fit = x_true * sqrt(scale); Delta chi^2 is unaffected.
     Without this, templates that vanish in some limit (e.g. ~ m_X^2 as m_X -> 0) would need
     astronomically large couplings that Migrad cannot reach. The responses R = J/s are
-    scale-free. For a tuple of Templates (a combined fit) the scale is common to all of them,
-    from their summed events, since the coupling is shared. Returns (templates, (scale_1, scale_2)).
+    scale-free. For a tuple of Templates (a combined fit) the scale of each coupling is common to
+    all of them, from their summed events, since the coupling is shared. Returns (templates,
+    scales), one scale per NP template.
     """
-    parts = (tpl,) if isinstance(tpl, Templates) else tuple(tpl)
-    totals = (sum(float(np.sum(t.s_NP_1)) for t in parts), sum(float(np.sum(t.s_NP_2)) for t in parts))
-    scales = tuple(total / target if total > 0 else 1.0 for total in totals)
-    out = tuple(t._replace(s_NP_1=t.s_NP_1 / scales[0], s_NP_2=t.s_NP_2 / scales[1]) for t in parts)
+    parts = _parts(tpl)
+    totals = np.sum([t.s_NP.sum(axis=1) for t in parts], axis=0)
+    scales = tuple(float(total) / target if total > 0 else 1.0 for total in totals)
+    out = tuple(t._replace(s_NP=t.s_NP / np.array(scales)[:, None]) for t in parts)
     return (out[0] if isinstance(tpl, Templates) else out), scales
 
 
@@ -436,9 +452,7 @@ def fit_WET_vector(experiment, *, CVL=None, CVR=None, errors=True):
     extra = _lep_term((0.0, 0.0)) if experiment in _WITH_LEP else None  # no Bs -> nu nu-bar: a constant
 
     def x_init(cvl, cvr):
-        x = np.zeros(_NPAR[experiment])
-        x[1:3] = cvl, cvr
-        return x
+        return _x_init(experiment, (0.0, cvl, cvr))
 
     sm = _fit(experiment, tpl, x_init(CVL_SM, 0.0), ["x0", "x1", "x2"], extra, _WET_HEAD).fval
     fixed = ["x0"] + (["x1"] if CVL is not None else []) + (["x2"] if CVR is not None else [])
@@ -454,6 +468,100 @@ def fit_WET_vector(experiment, *, CVL=None, CVR=None, errors=True):
         err = tuple(np.sqrt(np.diag(cov)))
     model = Model("nunu", 0.0, CVL=cvl, CVR=cvr)
     return WETVectorFit(model, cvl, cvr, err, cov, m.fval - sm, m)
+
+
+# The full WET of B -> K(*) nu nu-bar: the rate is a sum of five positive templates, without
+# interference between them (massless neutrinos; tests/test_fits.py), with the couplings
+#   V+ = C_VL + C_VR (B -> K, B -> K*: form factor V), V- = C_VL - C_VR (B -> K*: A_1, A_12),
+#   S+ = C_SL + C_SR (B -> K), S- = C_SL - C_SR (B -> K*), T = C_TL (both).
+# The SM is included in the vector couplings (V+ = V- = CVL_SM), so mu_SM = 0.
+WET_COUPLINGS = ("V+", "V-", "S+", "S-", "T")
+WET_SM = (CVL_SM, CVL_SM, 0.0, 0.0, 0.0)  # the SM point
+_WET_BASIS = (
+    _WET_PLUS,
+    _WET_MINUS,
+    Model("nunu", 0.0, CSL=0.5, CSR=0.5),
+    Model("nunu", 0.0, CSL=0.5, CSR=-0.5),
+    Model("nunu", 0.0, CTL=1.0),
+)
+
+
+def wet_model(couplings):
+    "The Model of the WET couplings (V+, V-, S+, S-, T) (see WET_COUPLINGS): the total rate, SM included."
+    vp, vm, sp, sm, t = couplings
+    return Model("nunu", 0.0, CVL=(vp + vm) / 2, CVR=(vp - vm) / 2, CSL=(sp + sm) / 2, CSR=(sp - sm) / 2, CTL=t)
+
+
+def _check_WET_couplings(names):
+    unknown = [c for c in names if c not in WET_COUPLINGS]
+    if unknown or len(set(names)) != len(names):
+        raise ValueError(f"WET couplings must be different names of {WET_COUPLINGS}, not {names!r}")
+
+
+def _wet_fit(experiment, tpl, values):
+    """Fit of the WET couplings (V+, V-, S+, S-, T) with those given in values ({name: value}) fixed.
+
+    Free couplings start at the SM; there are no Bs -> nu nu-bar rates, so LEP is omitted (a constant).
+    """
+    head = np.array((0.0, *WET_SM))
+    for name, v in values.items():
+        head[1 + WET_COUPLINGS.index(name)] = v
+    fixed = ["x0"] + [f"x{1 + WET_COUPLINGS.index(name)}" for name in values]
+    return _fit(experiment, tpl, _x_init(experiment, head), fixed)
+
+
+class WETFit(NamedTuple):
+    """Result of fit_WET: the best-fit couplings {name: value} (see WET_COUPLINGS; all >= 0, the rates
+    depend on their squares), the best-fit Model, -2 ln L relative to the SM, and the Minuit object."""
+
+    couplings: dict
+    model: object
+    delta_chi2: float
+    minuit: object
+
+
+def fit_WET(experiment, **fixed):
+    """Fit the WET couplings V+ = C_VL + C_VR, V- = C_VL - C_VR, S+ = C_SL + C_SR, S- = C_SL - C_SR and T = C_TL.
+
+    The SM is included in the vector couplings, so the interference with it is included
+    (see WET_COUPLINGS). experiment: one of EXPERIMENTS; B -> K (Belle II) determines only V+,
+    S+ and T, so the others need BaBar (the combined fits). fixed: couplings held fixed, by
+    name, e.g. fit_WET("combined", **{"S-": 0.0}). Returns a WETFit.
+    """
+    _check_experiment(experiment)
+    _check_WET_couplings(list(fixed))
+    tpl = _templates(experiment, *_WET_BASIS, interfering=True)
+    sm = _wet_fit(experiment, tpl, dict(zip(WET_COUPLINGS, WET_SM))).fval
+    m = _wet_fit(experiment, tpl, fixed)
+    couplings = {name: abs(m.values[1 + k]) for k, name in enumerate(WET_COUPLINGS)}
+    return WETFit(couplings, wet_model(couplings.values()), m.fval - sm, m)
+
+
+def _wet_point(experiment, tpl, scan, a, b, global_min):
+    "-2 Delta ln L at ONE grid point of profile_logLL_WET. This runs inside a worker."
+    return _wet_fit(experiment, tpl, {scan[0]: a, scan[1]: b}).fval - global_min
+
+
+def profile_logLL_WET(experiment, scan, values_a, values_b, *, n_jobs=-1):
+    """Profile -2 Delta ln L on a grid of two WET couplings, the other three fitted (parallel over the grid).
+
+    scan: two of WET_COUPLINGS ("V+", "V-", "S+", "S-", "T"), with grid values values_a and
+    values_b; the other three couplings and all nuisance params. are fitted at each point (a
+    profile over them: a panel is not a slice with them at the SM or zero). The rates
+    depend on the squares of the couplings, so values >= 0 suffice. experiment: one of
+    EXPERIMENTS. Returns the grid indexed [b, a], relative to the global minimum (fit_WET).
+    """
+    _check_experiment(experiment)
+    if len(scan) != 2:
+        raise ValueError(f"scan must name two WET couplings, not {scan!r}")
+    _check_WET_couplings(list(scan))
+    tpl = _templates(experiment, *_WET_BASIS, interfering=True)
+    global_min = _wet_fit(experiment, tpl, {}).fval
+    values_a, values_b = np.asarray(values_a, dtype=float), np.asarray(values_b, dtype=float)
+    jobs = (delayed(_wet_point)(experiment, tpl, tuple(scan), a, b, global_min) for a in values_a for b in values_b)
+    gen = Parallel(n_jobs=n_jobs, return_as="generator")(jobs)
+    res = np.array(list(tqdm(gen, total=len(values_a) * len(values_b), desc=f"{experiment}, WET {scan}")))
+    return res.reshape(len(values_a), len(values_b)).T
 
 
 def profile_logLL_SM(experiment, mu):
@@ -493,9 +601,9 @@ SCAN_EXPERIMENTS = ("BelleII", "BaBar", "LEP", "combined")  # the grids of a Sca
 
 
 def _lep_term(Br_LEP):
-    "LEP log likelihood and its gradient as functions of the parameter vector x."
-    B1, B2 = float(Br_LEP[0]), float(Br_LEP[1])
-    return (lambda x: logLL_LEP(x, B1, B2), lambda x: grad_LEP(x, B1, B2))
+    "LEP log likelihood and its gradient as functions of the parameter vector x (Br_LEP: one per NP template)."
+    Br = np.array(Br_LEP, dtype=float)
+    return (lambda x: logLL_LEP(x, Br), lambda x: grad_LEP(x, Br))
 
 
 def _lep_min(Br_LEP):
@@ -511,7 +619,7 @@ def _profile_point(c1, c2, fits, global_mins, Br_LEP):
     fits: {grid name: (kind, templates)}; the LEP grid has kind None.
     """
     head = (1.0, c1, c2)
-    lep = logLL_LEP(np.array(head), float(Br_LEP[0]), float(Br_LEP[1]))
+    lep = logLL_LEP(np.array(head), np.array(Br_LEP, dtype=float))
     res = []
     for name, (kind, tpl) in fits.items():
         if kind is None:
@@ -532,6 +640,9 @@ def profile_logLL_scan(
     experiments: which of "BelleII", "BaBar", "LEP" and "combined" (all three) to compute.
     belle2: the Belle II likelihood of the BelleII and combined grids, "lights" (the lights
     likelihood) or "public" (Belle II's public likelihood).
+
+    Only the nuisance params. are fitted at each grid point: mu_SM = 1 and there are no couplings
+    besides those of the two models, so the grids are slices (not profiles over other couplings).
 
     Returns a ScanResult of the Delta chi^2 grids (BelleII, BaBar, LEP, combined), indexed
     [x2, x1], each relative to its own global minimum; grids not computed are None.
@@ -602,7 +713,7 @@ def profile_logLL_strengths(experiment, model_1, model_2, scan, values_a, values
     The parameters are x0 = mu_SM (the SM signal strength, >= 0) and x1, x2 (the coupling
     multipliers of model_1 and model_2, whose signal strengths are x1^2 and x2^2). scan names
     the two scanned, e.g. ("x0", "x1"), with grid values values_a and values_b; the third and all
-    nuisance params. are fitted at each point. Unlike profile_logLL_scan (which fixes mu_SM = 1),
+    nuisance params. are fitted at each point (a profile over the third). Unlike profile_logLL_scan (which fixes mu_SM = 1),
     this lets the SM-like signal float, e.g. for a weak effective theory whose vector coupling
     rescales the SM (|C_V|^2 = mu_SM C_V,SM^2).
 
