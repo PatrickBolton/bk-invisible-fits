@@ -14,9 +14,9 @@ The rate formulas are aligned by hand, so this file is excluded from ruff format
 
 import numpy as np
 
-from .constants import ALPHA_MB, CSM, GF, LAMBDAt, fBs, mB, mb, mb_MSbar, mBs0, mK, mKs, ms, tauB, tauB0, tauBs
+from .constants import ALPHA_MB, CSM, GF, LAMBDAt, fBs, mB, mb, mBs0, mK, mKs, ms, tauB, tauB0, tauBs
 from .form_factors import A_VALS_GRDV, A0f, A1f, A12f, T1f, T2f, T23f, Vf, f0f, fpf, fTf
-from .kinematics import bX, lam, lims_2body, lims_3body, pKvec
+from .kinematics import bX, lims_2body, lims_3body, pKvec
 
 # Rows of the returned B -> K(*) rates
 K, KS, KS_L, KS_T = 0, 1, 2, 3
@@ -133,28 +133,26 @@ def dBdqsq_SM(qsq, is_ident=False, a_vals=A_VALS_GRDV):
 
 
 def dBdqsq_BKnunu_WET(qsq, mX, Ci, Lambda=1, is_ident=False, a_vals=A_VALS_GRDV):
-    """dB/dq^2 of B -> K nu nu-bar in the weak effective theory (WET), K only.
+    """dB/dq^2 of B -> K(*) nu nu-bar in the weak effective theory (WET).
 
-    Ci = (CV, CS, CT) = (C_VL + C_VR, C_SL + C_SR, C_TL), the Wilson coefficients of the
-    operators of eq. 8 of arXiv:2507.12393 (Belle II), normalised by -4 G_F/sqrt(2) alpha/(2 pi)
-    V_ts* V_tb as in its eq. 7, with massless neutrinos summed over three flavours; the rate is
-    its eq. 9 (Felkl, Li, Schmidt, JHEP 12 (2021) 118). As in EOS, which Belle II used, the
-    normalisation takes alpha = alpha_e(m_b) = 1/133 and the scalar term MS-bar quark masses at
-    mu_b ~ 4.2 GeV, the scale of the coefficients. The SM is CV = Xt / sW^2 * ALPHA / ALPHA_MB
-    = 6.60 (dBdqsq_SM, which uses ALPHA = 1/127.952; EOS: 6.61). mX, Lambda and is_ident are not used (uniform rate signature).
+    Ci = (CVL, CVR, CSL, CSR, CTL), the Wilson coefficients of the operators of docs/operators.md
+    (eq. 8 of arXiv:2507.12393), in the normalisation 4 G_F/sqrt(2) alpha_e/(2 pi) V_ts* V_tb with
+    alpha_e(m_b) = ALPHA_MB = 1/133, as in EOS; massless neutrinos. B -> K depends on CVL + CVR,
+    CSL + CSR and CTL; B -> K* on CVL + CVR, CVL - CVR, CSR - CSL and CTL. The SM is
+    CVL = Xt / sW^2 * ALPHA / ALPHA_MB = 6.60. mX, Lambda and is_ident are not used.
+
+    The rates are those of a massless fermion pair (dBdqsq_BKpsipsi), with the couplings mapped
+    so that they reproduce eq. 9 of arXiv:2507.12393 and EOS (b-to-psd-nu-nu.cc,
+    b-to-vec-nu-nu.cc) for B -> K and B -> K*. That normalisation counts three neutrino flavours
+    for every operator. Strictly, the scalar bilinear (nu_i^c P_L nu_j) is symmetric and the tensor
+    one antisymmetric in the flavours i, j, so the tensor operator vanishes for identical flavours:
+    the scalar and tensor couplings are effective ones, which absorb the flavour structure.
     """
-    CV, CS, CT = Ci
-    aK_vals, _ = a_vals
-    fp, f0, fT = fpf(qsq, aK_vals), f0f(qsq, aK_vals), fTf(qsq, aK_vals)
-    limsK = lims_3body(mB, mK, 0.0, qsq)
-    lamK = lam(mB**2, mK**2, qsq) * limsK
-    norm = 3 * tauB * (4 * GF / np.sqrt(2) * ALPHA_MB / (2 * np.pi) * LAMBDAt) ** 2 * np.sqrt(lamK) * qsq / ((4 * np.pi) ** 3 * mB**3)
-
-    BK_rate = norm * (lamK / (24 * qsq) * fp**2 * abs(CV)**2
-                      + (mB**2 - mK**2)**2 / (8 * (mb_MSbar - ms)**2) * f0**2 * abs(CS)**2
-                      + 2 * lamK / (3 * (mB + mK)**2) * fT**2 * abs(CT)**2) * limsK
-
-    return _rates(BK_rate)
+    CVL, CVR, CSL, CSR, CTL = Ci
+    n = 4 * GF / np.sqrt(2) * ALPHA_MB / (2 * np.pi) * LAMBDAt
+    # (CVL, CVR, CVLp, CVRp, CSL, CSR, CSLp, CSRp, CTL, CTR) of the psi psi-bar rate
+    C_psi = [0, 0, -CVL * n, -CVR * n, CSL * n, CSR * n, -CSL * n, -CSR * n, 2 * CTL * n, 0]
+    return 3 / 2 * dBdqsq_BKpsipsi(qsq, 0.0, C_psi, 1, False, a_vals)
 
 
 def dBdqsq_BKphiphi(qsq, mphi, Ci, Lambda=1, is_ident=False, a_vals=A_VALS_GRDV):

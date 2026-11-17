@@ -62,18 +62,84 @@ def test_random_toys_reproducible():
     assert all(np.array_equal(x[0], y[0]) and np.array_equal(x[1], y[1]) for x, y in zip(a, b))
 
 
+def wet_eq9_K(q2, CV, CS, CT):
+    "B -> K nu nu-bar in the WET, eq. 9 of arXiv:2507.12393 (EOS b-to-psd-nu-nu.cc), alpha_e(m_b) normalisation."
+    from lights.constants import ALPHA_MB, GF, LAMBDAt, mb, ms, tauB
+    from lights.kinematics import lam
+
+    L = lam(mB**2, mK**2, q2)
+    pre = (
+        3
+        * tauB
+        * (4 * GF / np.sqrt(2) * ALPHA_MB / (2 * np.pi) * LAMBDAt) ** 2
+        * np.sqrt(L)
+        * q2
+        / ((4 * np.pi) ** 3 * mB**3)
+    )
+    return pre * (
+        L / (24 * q2) * ff.fpf(q2) ** 2 * CV**2
+        + (mB**2 - mK**2) ** 2 / (8 * (mb - ms) ** 2) * ff.f0f(q2) ** 2 * CS**2
+        + 2 * L / (3 * (mB + mK) ** 2) * ff.fTf(q2) ** 2 * CT**2
+    )
+
+
+def wet_eos_Kstar(q2, CVL=0.0, CVR=0.0, CSL=0.0, CSR=0.0, CTL=0.0):
+    "B -> K* nu nu-bar in the WET: EOS b-to-vec-nu-nu.cc (total and longitudinal width) times tau_B0."
+    from lights.constants import ALPHA_MB, GF, LAMBDAt, mb, ms, tauB0
+    from lights.kinematics import lam
+
+    L = lam(mB**2, mKs**2, q2)
+    V, A1, A12, A0 = ff.Vf(q2), ff.A1f(q2), ff.A12f(q2), ff.A0f(q2)
+    T1, T2, T23 = ff.T1f(q2), ff.T2f(q2), ff.T23f(q2)
+    norm = 3 * tauB0 * (4 * GF * ALPHA_MB / (2 * np.pi)) ** 2 / 2 * LAMBDAt**2 * np.sqrt(L) / (4 * np.pi * mB) ** 3
+    longitudinal = 8 * mB**2 * mKs**2 / 3 * A12**2 * (CVL - CVR) ** 2
+    total = (
+        q2 * L / (12 * (mB + mKs) ** 2) * V**2 * (CVL + CVR) ** 2
+        + longitudinal
+        + q2 * (mB + mKs) ** 2 / 12 * A1**2 * (CVL - CVR) ** 2
+        + q2 * L / (8 * (mb + ms) ** 2) * A0**2 * (CSR - CSL) ** 2
+        + q2
+        * (
+            32 * mB**2 * mKs**2 / (3 * (mB + mKs) ** 2) * T23**2
+            + (4 * L * T1**2 + 4 * (mB**2 - mKs**2) ** 2 * T2**2) / (3 * q2)
+        )
+        * CTL**2
+    )
+    return norm * total, norm * longitudinal
+
+
+WET_CASES = [  # (CVL, CVR, CSL, CSR, CTL)
+    (2.0, 0.0, 0.0, 0.0, 0.0),
+    (0.0, 2.0, 0.0, 0.0, 0.0),
+    (2.0, 1.0, 0.0, 0.0, 0.0),
+    (0.0, 0.0, 2.0, 0.0, 0.0),
+    (0.0, 0.0, 2.0, 1.0, 0.0),
+    (0.0, 0.0, 0.0, 0.0, 2.0),
+    (1.0, -0.5, 2.0, 1.0, 1.5),
+]
+
+
+@pytest.mark.parametrize("C", WET_CASES)
+def test_WET_rates_match_belle_II_and_EOS(C):
+    CVL, CVR, CSL, CSR, CTL = C
+    q = np.linspace(0.5, 18.0, 8)
+    rates = Model("nunu", 0.0, CVL=CVL, CVR=CVR, CSL=CSL, CSR=CSR, CTL=CTL).dBdqsq(q)
+    assert rates[0] == pytest.approx(wet_eq9_K(q, CVL + CVR, CSL + CSR, CTL), rel=1e-10)
+    total, longitudinal = wet_eos_Kstar(q, CVL, CVR, CSL, CSR, CTL)
+    assert rates[1] == pytest.approx(total, rel=1e-10)
+    if CSL == CSR == CTL == 0:  # EOS's longitudinal width has the vector currents only
+        assert rates[2] == pytest.approx(longitudinal, rel=1e-10)
+
+
 def test_WET_vector_coupling_is_the_SM():
-    # dB/dq^2 of B -> K nu nu-bar in the WET (arXiv:2507.12393 eq. 9) is the SM rate for
-    # C_V = Xt / sW^2 in the normalisation of dBdqsq_SM (alpha = 1/127.952), i.e. 6.60 in the WET
-    # normalisation with alpha_e(m_b) = 1/133 (EOS: 6.61)
+    # The WET rate is the SM rate for CVL = Xt / sW^2 in the normalisation of dBdqsq_SM
+    # (alpha = 1/127.952), i.e. 6.60 in the WET normalisation with alpha_e(m_b) = 1/133 (EOS: 6.61)
     from lights.constants import ALPHA, ALPHA_MB, SWsq, Xt
 
     q = np.linspace(0.5, 22.0, 9)
     CV_SM = Xt / SWsq * ALPHA / ALPHA_MB
     assert CV_SM == pytest.approx(6.613, abs=0.01)
-    wet = Model("nunu", 0.0, CV=CV_SM).dBdqsq(q)
-    assert wet[0] == pytest.approx(dBdqsq_SM(q)[0], rel=1e-12)
-    assert np.all(wet[1:] == 0)  # K only
-    # the three couplings add incoherently
-    both = Model("nunu", 0.0, CS=2.0, CT=3.0).dBdqsq(q)[0]
-    assert both == pytest.approx(Model("nunu", 0.0, CS=2.0).dBdqsq(q)[0] + Model("nunu", 0.0, CT=3.0).dBdqsq(q)[0])
+    assert Model("nunu", 0.0, CVL=CV_SM).dBdqsq(q) == pytest.approx(dBdqsq_SM(q), rel=1e-12)
+    # ... also with other form factors: they are passed through
+    a = ff.a_vals_gen(1, rng=2)[0]
+    assert Model("nunu", 0.0, CVL=CV_SM).dBdqsq(q, a) == pytest.approx(dBdqsq_SM(q, a_vals=a), rel=1e-12)

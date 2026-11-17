@@ -29,7 +29,7 @@ def test_SM_fit_regression():
 
 def test_NP_fit_regression():
     fit = min_logLL("BelleII", GS)
-    assert abs(fit.value) == pytest.approx(1.571, abs=0.003)
+    assert abs(fit.value) == pytest.approx(1.346, abs=0.003)  # scalar rates with MS-bar quark masses at mu_b
     assert fit.delta_chi2 == pytest.approx(-20.05, abs=0.02)
 
 
@@ -50,8 +50,8 @@ def test_vanishing_template_is_still_fitted():
 
 def test_nuisances_cannot_cancel_a_large_signal():
     tpl = np_templates("BaBar", Model("phi", 2.1, CSL=5e-9, CSR=5e-9), Model("phi", 2.1, CSL=5e-9, CSR=-5e-9))
-    m = _fit("BaBar", tpl, _x_init("BaBar", (1.0, 8.0, 30.0)), ["x0", "x1", "x2"])
-    nominal = 30**2 * tpl.s_NP_2
+    m = _fit("BaBar", tpl, _x_init("BaBar", (1.0, 6.9, 25.8)), ["x0", "x1", "x2"])
+    nominal = 25.8**2 * tpl.s_NP_2
     fitted = components_BaBar(m.values, *tpl)["NP_2"]
     k = np.argmax(nominal)
     assert fitted[k] > 0.3 * nominal[k]
@@ -60,7 +60,7 @@ def test_nuisances_cannot_cancel_a_large_signal():
 def test_scan_minimum_is_close_to_zero():
     gS = Model("phi", 2.1, CSL=5e-9, CSR=5e-9)
     gP = Model("phi", 2.1, CSL=5e-9, CSR=-5e-9)
-    res = profile_logLL_scan(gS, gP, [-8, 8], [-30, 30], pts=[15, 15], n_jobs=2)
+    res = profile_logLL_scan(gS, gP, [-6.9, 6.9], [-25.8, 25.8], pts=[15, 15], n_jobs=2)
     assert np.array_equal(res.combined, res[3])
     for name, a in zip(res._fields, res):
         assert np.isfinite(a).all(), name
@@ -165,7 +165,7 @@ def test_mass_scan_of_the_combined_fit():
 def test_scan_of_two_strengths_with_the_third_fitted():
     from lights.fits import profile_logLL_strengths
 
-    S, T = Model("nunu", 0.0, CS=1.0), Model("nunu", 0.0, CT=1.0)
+    S, T = Model("nunu", 0.0, CSL=1.0), Model("nunu", 0.0, CTL=1.0)
     a, b = np.linspace(0, 3, 4), np.linspace(0, 16, 5)
     grid = profile_logLL_strengths("BelleII_public", S, T, ("x0", "x2"), a, b, n_jobs=1)
     assert grid.shape == (5, 4) and grid.min() > -1e-3

@@ -78,7 +78,11 @@ CHANNELS = {
         Channel("psipsi", "B -> K(*) psi psi-bar, fermion pair", _PSI, False, dBdqsq_BKpsipsi, B_Bspsipsi),
         Channel("VV", "B -> K V V-bar, vector pair (K only)", ("CSL", "CSR"), False, dBdqsq_BKVV),
         Channel(
-            "nunu", "B -> K nu nu-bar, weak effective theory (K only)", ("CV", "CS", "CT"), False, dBdqsq_BKnunu_WET
+            "nunu",
+            "B -> K(*) nu nu-bar, weak effective theory",
+            ("CVL", "CVR", "CSL", "CSR", "CTL"),
+            False,
+            dBdqsq_BKnunu_WET,
         ),
         Channel(
             "PsiPsi",
