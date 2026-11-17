@@ -23,10 +23,10 @@ and fits them with binned Poisson likelihoods. Belle II's public likelihood
   <img src="docs/figures/WET_fit_public.png" width="48%" alt="Profile likelihood regions of the five WET couplings, fitted to Belle II's public likelihood and BaBar">
 </p>
 
-*Left: $B \to K$ and $B \to K^*$ spectra, normalised to the SM, for the SM and for the SM plus a
+Left: $B \to K$ and $B \to K^*$ spectra, normalised to the SM, for the SM and for the SM plus a
 light Dirac fermion pair $\psi\bar{\psi}$ ($m_\psi = 0.6$ GeV) at its best-fit coupling. The bands are the form
 factor and coupling uncertainties (notebook 05). Right: the WET couplings fitted to Belle II's
-public likelihood and BaBar; each panel profiles over the other three couplings (notebook 04).*
+public likelihood and BaBar; each panel profiles over the other three couplings (notebook 04).
 
 ## References
 
