@@ -11,6 +11,7 @@ fitted multipliers x1, x2 (signal strengths x1^2, x2^2).
 
     min_logLL("BelleII")                       SM fit: signal strength mu_SM
     min_logLL("BelleII", model)                NP fit: coupling multiplier of model
+    best_fit_model("BelleII", model)           the model with its couplings at their best fit
     profile_logLL_SM("BelleII", mu)            profile likelihood of mu_SM
     mass_scan("BelleII", model, masses)        NP fit as a function of the mass
     profile_logLL_scan(model_1, model_2, ...)  Delta chi^2 grids of two coupling multipliers
@@ -304,6 +305,22 @@ def min_logLL(experiment, model_1=None, model_2=None, *, errors=True):
     if NP == 1:
         value, error = value[0], error[0]
     return FitResult(value, error, m, delta_chi2)
+
+
+def best_fit_model(experiment, model, *, errors=True):
+    """The model with its couplings at their best-fit values, and the fit (min_logLL).
+
+    The couplings of model are scaled by the fitted multiplier: e.g. for
+    Model("psipsi", 0.6, Lambda=1e4, CVL=1., CVR=1.) the best-fit CVL + CVR is 2 * fit.value, and
+    best.couplings gives the best-fit value of each coupling. The rates depend on the couplings
+    squared, so their overall sign is not determined; the multiplier is taken positive.
+
+    experiment: one of EXPERIMENTS (e.g. "combined" for Belle II, BaBar and LEP). Returns
+    (best-fit Model, FitResult); fit.error is the error of the multiplier (with errors = True).
+    """
+    check_model(model, allow_none=False)
+    fit = min_logLL(experiment, model, errors=errors)
+    return model.scaled(abs(fit.value)), fit
 
 
 def profile_logLL_SM(experiment, mu):

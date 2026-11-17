@@ -30,7 +30,7 @@ Lambda of the effective operators. Couplings not given are zero.
 
 ```python
 from lights.models import Model, CHANNELS
-from lights.fits import mass_scan, min_logLL, profile_logLL_scan
+from lights.fits import best_fit_model, mass_scan, min_logLL, profile_logLL_scan
 
 gS = Model("phi", mX = 2.1, CSL = 5e-9, CSR = 5e-9)                   # B -> K phi
 fV = Model("psipsi", mX = 0.6, Lambda = 1e4, CVL = 1., CVR = 1.)       # B -> K psi psi-bar
@@ -47,6 +47,8 @@ fit.value, fit.error, fit.delta_chi2
 
 # NP fit: the couplings of the model are scaled by a fitted multiplier
 fit = min_logLL("BelleII", gS)
+best, fit = best_fit_model("BelleII", gS)    # the model with its couplings at their best fit
+best.couplings, best.dBdqsq(5.0)
 
 # The NP fit as a function of the mass (in parallel)
 delta_chi2 = mass_scan("BelleII", gS, [0.5, 1.0, 2.1])

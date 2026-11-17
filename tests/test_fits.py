@@ -175,3 +175,15 @@ def test_scan_of_two_strengths_with_the_third_fitted():
     assert grid[0, 0] - grid.min() > 3 and a[i] > 0 and b[j] > 0
     with pytest.raises(ValueError, match="two different parameters"):
         profile_logLL_strengths("BelleII_public", S, T, ("x1", "x1"), a, b)
+
+
+def test_best_fit_model_reproduces_the_paper():
+    # arXiv:2503.19025, Table I: psi psi-bar with the chiral coupling C_V,LL (Lambda = 10 TeV) at
+    # m_psi = 0.60 GeV, 4.9 +- 0.7 from Belle II only; C_V,LL is CVL = -CVLp = C/2 here
+    from lights.fits import best_fit_model
+
+    model = Model("psipsi", 0.60, Lambda=1e4, CVL=0.5, CVLp=-0.5)
+    best, fit = best_fit_model("BelleII", model)
+    assert fit.value == pytest.approx(4.9, abs=0.1) and fit.error == pytest.approx(0.7, abs=0.05)
+    assert best.couplings == pytest.approx({"CVL": 0.5 * fit.value, "CVLp": -0.5 * fit.value})
+    assert best.mX == model.mX and best.Lambda == model.Lambda
