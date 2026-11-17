@@ -32,24 +32,24 @@ public likelihood and BaBar; each panel profiles over the other three couplings 
 
 The code is based on these papers:
 
-- P. D. Bolton, S. Fajfer, J. F. Kamenik and M. Novoa-Brunet, *Signatures of light new
-  particles in $B \to K^{(*)} E_{\rm miss}$*, [arXiv:2403.13887](https://arxiv.org/abs/2403.13887).
+- P. D. Bolton, S. Fajfer, J. F. Kamenik and M. Novoa-Brunet, 'Signatures of light new
+  particles in $B \to K^{(*)} E_{\rm miss}$', [arXiv:2403.13887](https://arxiv.org/abs/2403.13887).
   The likelihoods of Belle II and BaBar (its appendix describes the BaBar inputs).
-- P. D. Bolton, S. Fajfer, J. F. Kamenik and M. Novoa-Brunet, *Impact of new invisible
-  particles on $B \to K^{(*)} E_{\rm miss}$ observables*, Phys. Rev. D 112, 035010 (2025),
+- P. D. Bolton, S. Fajfer, J. F. Kamenik and M. Novoa-Brunet, 'Impact of new invisible
+  particles on $B \to K^{(*)} E_{\rm miss}$ observables', Phys. Rev. D 112, 035010 (2025),
   [arXiv:2503.19025](https://arxiv.org/abs/2503.19025). The pair-production scenarios and
   the combined fits.
-- P. D. Bolton, J. F. Kamenik and M. Novoa-Brunet, *Dark light shining on $B \to K^{(*)} E_{\rm miss}$*,
+- P. D. Bolton, J. F. Kamenik and M. Novoa-Brunet, 'Dark light shining on $B \to K^{(*)} E_{\rm miss}$',
   [arXiv:2512.16999](https://arxiv.org/abs/2512.16999). The light vector boson scenario.
 
 If you use bk-invisible-fits, please cite these papers. The experimental inputs are from:
 
-- Belle II, *Evidence for $B^+ \to K^+\nu \bar{\nu}$ decays*, Phys. Rev. D 109, 112006 (2024),
+- Belle II, 'Evidence for $B^+ \to K^+\nu \bar{\nu}$ decays', Phys. Rev. D 109, 112006 (2024),
   [arXiv:2311.14647](https://arxiv.org/abs/2311.14647);
-- Belle II, *Model-agnostic likelihood for the reinterpretation of the $B^+ → K^+\nu \bar{\nu}$
-  measurement at Belle II*, Phys. Rev. D 112, 092016 (2025),
+- Belle II, 'Model-agnostic likelihood for the reinterpretation of the $B^+ → K^+\nu \bar{\nu}$
+  measurement at Belle II', Phys. Rev. D 112, 092016 (2025),
   [arXiv:2507.12393](https://arxiv.org/abs/2507.12393) (the public likelihood);
-- BaBar, *Search for $B \to K^{(*)}\nu\bar{\nu}$ and invisible quarkonium decays*, Phys. Rev. D 87, 112005
+- BaBar, 'Search for $B \to K^{(*)}\nu\bar{\nu}$ and invisible quarkonium decays', Phys. Rev. D 87, 112005
   (2013), [arXiv:1303.7465](https://arxiv.org/abs/1303.7465).
 
 Their sources and the way they were obtained are in the READMEs of
