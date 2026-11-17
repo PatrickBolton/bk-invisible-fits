@@ -1,8 +1,10 @@
 [project]
 name = "lights"
 version = "0.1.0"
-description = "B -> K(*) plus invisible analysis tools"
+description = "Fits of light invisible particles and the weak effective theory to B -> K(*) E_miss data"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "Patrick Bolton", email = "patrick.d.bolton@gmail.com" }
 ]

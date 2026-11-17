@@ -13,5 +13,7 @@ wheels/
 output/
 *.png
 *.pdf
+# ...except the figures of the README
+!docs/figures/*.png
 .DS_Store
 .ipynb_checkpoints/

@@ -1,14 +1,61 @@
-# lights
+# bk-invisible-fits: light new physics fits to B → K(\*) E_miss data
 
-Fits of new-physics models with light invisible particles to the Belle II B+ → K+ E_miss
-(inclusive tag) and BaBar B0 → K*0 E_miss binned data, together with the LEP constraint on
-Bs → invisible.
+Belle II has found evidence for B⁺ → K⁺νν̄, with a rate 2.7σ above the Standard Model (SM) prediction. bk-invisible-fits tests
+whether new light invisible particles can explain it. It fits new-physics (NP) scenarios to the
+binned q² spectra of Belle II's B⁺ → K⁺ E_miss (inclusive tag) and BaBar's B⁰ → K\*⁰ E_miss,
+together with LEP's bound on B_s → invisible. The q² spectrum separates the scenarios, since
+each kind of particle and coupling gives a different shape.
 
-The new physics is a light scalar, vector, fermion or spin-3/2 particle produced singly
-(B → K X) or in pairs (B → K X X̄) through the effective operators in
-[docs/operators.md](docs/operators.md). The code computes the branching fractions and the
-binned signal predictions of each experiment, including the Belle II q² smearing and the
-form factor and efficiency uncertainties, and fits them with binned Poisson likelihoods.
+The scenarios are:
+
+- a light scalar, vector, fermion or spin-3/2 particle, produced singly (B → K X) or in
+  pairs (B → K X X̄) through the effective operators in [docs/operators.md](docs/operators.md);
+- the weak effective theory (WET) of B → K(\*)νν̄, with vector, scalar and tensor couplings.
+  The vector couplings include the SM, so their interference with it is included.
+
+The code computes the branching fractions and the binned signal predictions of each
+experiment, including the Belle II q² smearing, form factor and efficiency uncertainties,
+and fits them with binned Poisson likelihoods. Belle II's public likelihood
+([arXiv:2507.12393](https://arxiv.org/abs/2507.12393)) is implemented as an alternative to
+our own Belle II likelihood, and every fit can use either.
+
+<p align="center">
+  <img src="docs/figures/best_fit_spectra.png" width="48%" alt="Normalised B -> K and B -> K* spectra for the SM and for the SM plus a light fermion pair at its best-fit coupling">
+  <img src="docs/figures/WET_fit_public.png" width="48%" alt="Profile likelihood regions of the five WET couplings, fitted to Belle II's public likelihood and BaBar">
+</p>
+
+*Left: B → K and B → K\* spectra, normalised to the SM, for the SM and for the SM plus a
+light Dirac fermion pair ψψ̄ (m_ψ = 0.6 GeV) at its best-fit coupling. The bands are the form
+factor and coupling uncertainties (notebook 05). Right: the WET couplings fitted to Belle II's
+public likelihood and BaBar; each panel profiles over the other three couplings (notebook 04).*
+
+## References
+
+The code is based on these papers:
+
+- P. D. Bolton, S. Fajfer, J. F. Kamenik and M. Novoa-Brunet, *Signatures of light new
+  particles in B → K(\*) E_miss*, [arXiv:2403.13887](https://arxiv.org/abs/2403.13887).
+  The likelihoods of Belle II and BaBar (its appendix describes the BaBar inputs).
+- P. D. Bolton, S. Fajfer, J. F. Kamenik and M. Novoa-Brunet, *Impact of new invisible
+  particles on B → K(\*) E_miss observables*, Phys. Rev. D 112, 035010 (2025),
+  [arXiv:2503.19025](https://arxiv.org/abs/2503.19025). The pair-production scenarios and
+  the combined fits.
+- P. D. Bolton, J. F. Kamenik and M. Novoa-Brunet, *Dark light shining on B → K(\*) E_miss*,
+  [arXiv:2512.16999](https://arxiv.org/abs/2512.16999). The light vector boson scenario.
+
+If you use bk-invisible-fits, please cite these papers. The experimental inputs are from:
+
+- Belle II, *Evidence for B⁺ → K⁺νν̄ decays*, Phys. Rev. D 109, 112006 (2024),
+  [arXiv:2311.14647](https://arxiv.org/abs/2311.14647);
+- Belle II, *Model-agnostic likelihood for the reinterpretation of the B⁺ → K⁺νν̄
+  measurement at Belle II*, Phys. Rev. D 112, 092016 (2025),
+  [arXiv:2507.12393](https://arxiv.org/abs/2507.12393) (the public likelihood);
+- BaBar, *Search for B → K(\*)νν̄ and invisible quarkonium decays*, Phys. Rev. D 87, 112005
+  (2013), [arXiv:1303.7465](https://arxiv.org/abs/1303.7465).
+
+Their sources and the way they were obtained are in the READMEs of
+[data/BtoKEmiss](data/BtoKEmiss/README.md) and [data/BelleII_public](data/BelleII_public/README.md).
+The Belle II (2023) and BaBar inputs were digitised from the figures of these publications.
 
 ## Installation
 
@@ -16,114 +63,21 @@ The project uses [uv](https://docs.astral.sh/uv/) and Python 3.14:
 
 ```sh
 uv sync            # creates .venv with the package (editable) and the dev tools
-uv run pytest      # runs the tests
+uv run pytest      # runs the tests (about 20 s)
 ```
 
-The experimental inputs and form factors are in `data/`, including Belle II's public likelihood
-(`data/BelleII_public/`, see its README). To use data stored elsewhere, set
+The experimental inputs and form factors are in `data/`. To use data stored elsewhere, set
 the environment variable `LIGHTS_DATA_DIR` to that directory.
 
-## Usage
+The Python package is called `lights` (`import lights`).
 
-A model is one channel with its mass, its couplings (Wilson coefficients) and the scale
-Lambda of the effective operators. Couplings not given are zero.
+## Documentation
 
-```python
-from lights.models import Model, CHANNELS
-from lights.fits import best_fit_model, fit_WET, fit_WET_vector, profile_logLL_WET, mass_scan, min_logLL, profile_logLL_scan
+The [user guide](docs/guide.md) covers:
+- **usage**, with examples of the models, fits and scans;
+- **the method**: the likelihoods, Belle II's public likelihood, interference with the SM, and slices vs profiles;
+- **the package layout**, the notebooks and the scripts.
 
-gS = Model("phi", mX = 2.1, CSL = 5e-9, CSR = 5e-9)                   # B -> K phi
-fV = Model("psipsi", mX = 0.6, Lambda = 1e4, CVL = 1., CVR = 1.)       # B -> K psi psi-bar
-fV_Majorana = Model("psipsi", mX = 0.6, Lambda = 1e4, is_ident = True, CVL = 1., CVR = 1.)
+## License
 
-list(CHANNELS)          # "phi", "V", "phiphi", "psipsi", "VV", "PsiPsi"
-fV.dBdqsq(5.0)          # dB/dq^2 at q^2 = 5 GeV^2, rows K, K*, K*_L, K*_T
-gS.B()                  # branching fractions of a two-body channel
-fV.B_Bs()               # B(Bs -> psi psi-bar)
-
-# SM fit: signal strength mu_SM, its error and -2 Delta ln L relative to mu_SM = 1
-fit = min_logLL("BelleII")
-fit.value, fit.error, fit.delta_chi2
-
-# NP fit: the couplings of the model are scaled by a fitted multiplier
-fit = min_logLL("BelleII", gS)
-best, fit = best_fit_model("BelleII", gS)    # the model with its couplings at their best fit
-best.couplings, best.dBdqsq(5.0)
-
-# The NP fit as a function of the mass (in parallel)
-delta_chi2 = mass_scan("BelleII", gS, [0.5, 1.0, 2.1])
-
-# Experiments: "BelleII", "BelleII_public", "BaBar", and the combined fits "combined" and
-# "combined_public" (Belle II, BaBar and LEP, with the lights or the public Belle II likelihood)
-fit = min_logLL("combined_public", gS)
-
-# Vector WET couplings, which interfere with the SM: fitted with the SM included in them
-from lights.constants import CVL_SM
-wet = fit_WET_vector("combined", CVL = CVL_SM)    # C_VR, with C_VL at its SM value
-wet.CVR, wet.errors, wet.delta_chi2, wet.model    # wet.model: the total rate, SM included
-fit = fit_WET("combined")                         # all five: C_VL +- C_VR, C_SL +- C_SR, C_TL
-grid = profile_logLL_WET("combined", ("V+", "T"), values_a, values_b)   # two scanned, the other three profiled
-
-# Likelihood on a grid of the multipliers of two models (in parallel): a slice, with mu_SM = 1 and
-# no other couplings (only the nuisance params. are fitted)
-gP = Model("phi", mX = 2.1, CSL = 5e-9, CSR = -5e-9)
-scan = profile_logLL_scan(gS, gP, (-8, 8), (-30, 30), pts = (100, 100))
-scan.BelleII, scan.BaBar, scan.LEP, scan.combined     # Delta chi^2 grids, indexed [x2, x1]
-scan_public = profile_logLL_scan(gS, gP, (-8, 8), (-30, 30), belle2 = "public")   # Belle II's public likelihood
-```
-
-`lights.plotting.plot_contours` draws the contours of a scan. Model objects are immutable;
-`with_mass()` and `scaled()` return modified copies.
-
-## Package layout
-
-| Module | Contents |
-| --- | --- |
-| `lights.models` | `Model` and the channel registry `CHANNELS` |
-| `lights.branching_fractions` | B → K(*) X(X̄) and Bs → X X̄ rates for each channel |
-| `lights.form_factors` | B → K and B → K* form factors (GRDV fit) |
-| `lights.load_data` | the experimental inputs, grouped as `BelleII` and `BaBar` |
-| `lights.signal_rates` | binned signal predictions and their response to the theory inputs |
-| `lights.likelihoods` | likelihoods and gradients (compiled with numba), NP signal templates |
-| `lights.fits` | fits, profile likelihoods, mass scans and coupling scans |
-| `lights.histfactory` | Belle II's public HistFactory (pyhf) likelihood as arrays for the compiled likelihood |
-| `lights.statistics` | reduced chi-squared of a fit |
-| `lights.plotting` | figure style and contour plots |
-
-### Likelihoods
-
-Each experiment's likelihood is a binned Poisson likelihood with Gaussian-constrained
-nuisance parameters for the backgrounds. The form factor coefficients and efficiencies enter
-as shared nuisance parameters u ~ N(0, 1), to which every signal template (SM and NP)
-responds log-normally, so the theory uncertainties of the SM and NP signals are correlated.
-The combined fit adds the Belle II, BaBar and LEP likelihoods. NP rates add to the SM, so
-NP models must not interfere with it; the vector WET couplings C_VL, C_VR, which do, are
-fitted with `fit_WET_vector` (the SM included in them, from two positive templates
-proportional to (C_VL + C_VR)^2 and (C_VL - C_VR)^2) and rejected by the other fits. Fits use iminuit with analytic
-gradients (`lights.fits`); the likelihoods are compiled with numba.
-
-Belle II's public likelihood (arXiv:2507.12393) is available as the experiment
-`"BelleII_public"` (its inclusive-tag part) in `min_logLL`, `profile_logLL_SM` and
-`mass_scan`, in the combined fit `"combined_public"`, and in coupling scans with
-`profile_logLL_scan(..., belle2 = "public")`. Its HistFactory model is evaluated by a compiled reimplementation that agrees
-with pyhf, and new-physics signals are obtained by kinematic reweighting: Belle II's joint
-number density in true q^2 times the model's branching fraction in each q^2 bin.
-
-## Notebooks
-
-| Notebook | Contents |
-| --- | --- |
-| `01_BR_plots` | branching fraction spectra of each channel |
-| `02_SM_fit` | inputs, SM fit to Belle II and the profile likelihood of mu_SM, also with Belle II's public likelihood |
-| `03_NP_mass` | Belle II fits as a function of the new particle's mass, compared with Belle II's public likelihood |
-| `04_NP_coupling` | coupling scans: Belle II, BaBar, LEP and combined contours, also with Belle II's public likelihood; the WET fit of Belle II's arXiv:2507.12393 (Fig. 3), and of all WET couplings with BaBar |
-| `05_fit_predict` | normalised SM and NP spectra; SM + NP spectra at the best-fit couplings (invisible particles and WET), with coupling and form factor uncertainties |
-
-Figures are saved to `plots/`.
-
-## Scripts
-
-- `scripts/check_gradients.py` checks the analytic likelihood gradients against finite differences.
-- `scripts/validate_theory_cov.py` compares the linear theory-uncertainty model with full toys.
-
-Run them with `uv run python scripts/<name>.py`.
+MIT; see [LICENSE](LICENSE). The data in `data/BelleII_public` is CC0 (HEPData).
