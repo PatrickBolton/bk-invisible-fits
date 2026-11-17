@@ -30,7 +30,7 @@ Lambda of the effective operators. Couplings not given are zero.
 
 ```python
 from lights.models import Model, CHANNELS
-from lights.fits import best_fit_model, mass_scan, min_logLL, profile_logLL_scan
+from lights.fits import best_fit_model, fit_WET_vector, mass_scan, min_logLL, profile_logLL_scan
 
 gS = Model("phi", mX = 2.1, CSL = 5e-9, CSR = 5e-9)                   # B -> K phi
 fV = Model("psipsi", mX = 0.6, Lambda = 1e4, CVL = 1., CVR = 1.)       # B -> K psi psi-bar
@@ -56,6 +56,11 @@ delta_chi2 = mass_scan("BelleII", gS, [0.5, 1.0, 2.1])
 # Experiments: "BelleII", "BelleII_public", "BaBar", and the combined fits "combined" and
 # "combined_public" (Belle II, BaBar and LEP, with the lights or the public Belle II likelihood)
 fit = min_logLL("combined_public", gS)
+
+# Vector WET couplings, which interfere with the SM: fitted with the SM included in them
+from lights.constants import CVL_SM
+wet = fit_WET_vector("combined", CVL = CVL_SM)    # C_VR, with C_VL at its SM value
+wet.CVR, wet.errors, wet.delta_chi2, wet.model    # wet.model: the total rate, SM included
 
 # Profile likelihood on a grid of the multipliers of two models (in parallel)
 gP = Model("phi", mX = 2.1, CSL = 5e-9, CSR = -5e-9)
@@ -88,7 +93,10 @@ Each experiment's likelihood is a binned Poisson likelihood with Gaussian-constr
 nuisance parameters for the backgrounds. The form factor coefficients and efficiencies enter
 as shared nuisance parameters u ~ N(0, 1), to which every signal template (SM and NP)
 responds log-normally, so the theory uncertainties of the SM and NP signals are correlated.
-The combined fit adds the Belle II, BaBar and LEP likelihoods. Fits use iminuit with analytic
+The combined fit adds the Belle II, BaBar and LEP likelihoods. NP rates add to the SM, so
+NP models must not interfere with it; the vector WET couplings C_VL, C_VR, which do, are
+fitted with `fit_WET_vector` (the SM included in them, from two positive templates
+proportional to (C_VL + C_VR)^2 and (C_VL - C_VR)^2) and rejected by the other fits. Fits use iminuit with analytic
 gradients (`lights.fits`); the likelihoods are compiled with numba.
 
 Belle II's public likelihood (arXiv:2507.12393) is available as the experiment
@@ -106,7 +114,7 @@ number density in true q^2 times the model's branching fraction in each q^2 bin.
 | `02_SM_fit` | inputs, SM fit to Belle II and the profile likelihood of mu_SM, also with Belle II's public likelihood |
 | `03_NP_mass` | Belle II fits as a function of the new particle's mass, compared with Belle II's public likelihood |
 | `04_NP_coupling` | coupling scans: Belle II, BaBar, LEP and combined contours, also with Belle II's public likelihood; the WET fit of Belle II's arXiv:2507.12393 (Fig. 3) |
-| `05_fit_predict` | normalised SM and NP spectra with form factor uncertainties |
+| `05_fit_predict` | normalised SM and NP spectra; SM + NP spectra at the best-fit couplings (invisible particles and WET), with coupling and form factor uncertainties |
 
 Figures are saved to `plots/`.
 

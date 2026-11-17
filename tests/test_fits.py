@@ -187,3 +187,57 @@ def test_best_fit_model_reproduces_the_paper():
     assert fit.value == pytest.approx(4.9, abs=0.1) and fit.error == pytest.approx(0.7, abs=0.05)
     assert best.couplings == pytest.approx({"CVL": 0.5 * fit.value, "CVLp": -0.5 * fit.value})
     assert best.mX == model.mX and best.Lambda == model.Lambda
+
+
+def test_WET_vector_templates_add_up_to_the_SM():
+    # The templates of fit_WET_vector at the SM couplings are the SM templates, response included
+    from lights.constants import CVL_SM
+    from lights.fits import _WET_MINUS, _WET_PLUS
+    from lights.signal_rates import signal_template
+
+    for experiment in ("BelleII", "BelleII_public", "BaBar"):
+        s_SM, J_SM = signal_template(experiment, include_SM=True)
+        (s_p, J_p), (s_m, J_m) = signal_template(experiment, _WET_PLUS), signal_template(experiment, _WET_MINUS)
+        assert CVL_SM**2 * (s_p + s_m) == pytest.approx(s_SM, rel=1e-10)
+        assert CVL_SM**2 * (J_p + J_m) == pytest.approx(J_SM, rel=1e-10, abs=1e-12 * np.abs(J_SM).max())
+
+
+def test_WET_vector_fit_with_C_VL_alone_is_the_SM_signal_strength_fit():
+    # C_VL rescales the SM, mu_SM = (C_VL / CVL_SM)^2: the same fit as min_logLL
+    from lights.constants import CVL_SM
+    from lights.fits import fit_WET_vector
+
+    sm = min_logLL("BelleII")
+    fit = fit_WET_vector("BelleII", CVR=0.0)
+    assert fit.minuit.valid and fit.CVR == 0.0 and fit.errors[1] == 0.0
+    assert (fit.CVL / CVL_SM) ** 2 == pytest.approx(sm.value, rel=1e-3)
+    assert 2 * fit.CVL * fit.errors[0] / CVL_SM**2 == pytest.approx(sm.error, rel=1e-3)
+    assert fit.delta_chi2 == pytest.approx(sm.delta_chi2, abs=1e-3)
+    assert fit.model.couplings == pytest.approx({"CVL": fit.CVL})
+
+
+def test_WET_vector_fit_of_C_VR():
+    # Belle II's excess wants |C_VL + C_VR| above the SM; with B -> K only, C_VL + C_VR is what is fitted
+    from lights.constants import CVL_SM
+    from lights.fits import fit_WET_vector
+
+    belle = fit_WET_vector("BelleII", CVL=CVL_SM)
+    sm = min_logLL("BelleII")
+    assert ((CVL_SM + belle.CVR) / CVL_SM) ** 2 == pytest.approx(sm.value, rel=1e-3)
+    combined = fit_WET_vector("combined", CVL=CVL_SM)
+    assert combined.minuit.valid and combined.CVL == CVL_SM
+    assert combined.CVR == pytest.approx(8.32, abs=0.05) and combined.errors[1] == pytest.approx(2.34, abs=0.05)
+    assert combined.delta_chi2 < -6
+
+
+def test_fits_reject_couplings_that_interfere_with_the_SM():
+    from lights.fits import best_fit_model
+
+    for model in (Model("nunu", 0.0, CVL=1.0), Model("nunu", 0.0, CVR=1.0, CTL=1.0)):
+        with pytest.raises(ValueError, match="fit_WET_vector"):
+            min_logLL("BelleII", model)
+        with pytest.raises(ValueError, match="interferes"):
+            best_fit_model("combined", model)
+        with pytest.raises(ValueError, match="interferes"):
+            profile_logLL_scan(model, None, (0, 1), (0, 1), pts=(2, 2), experiments=("BelleII",), n_jobs=1)
+    min_logLL("BelleII", Model("nunu", 0.0, CTL=1.0))  # scalar and tensor couplings do not interfere

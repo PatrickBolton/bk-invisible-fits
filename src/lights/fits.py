@@ -15,6 +15,12 @@ fitted multipliers x1, x2 (signal strengths x1^2, x2^2).
     profile_logLL_SM("BelleII", mu)            profile likelihood of mu_SM
     mass_scan("BelleII", model, masses)        NP fit as a function of the mass
     profile_logLL_scan(model_1, model_2, ...)  Delta chi^2 grids of two coupling multipliers
+    fit_WET_vector("combined", CVL = CVL_SM)   fit of the WET vector couplings C_VL, C_VR (SM included)
+
+The NP rates add to the SM, so these models must not interfere with the SM: the invisible
+particles (different final states) and the scalar and tensor WET operators. The vector WET
+couplings C_VL, C_VR do interfere; they are fitted with fit_WET_vector, which includes the SM
+in them, and are rejected by the other fits.
 """
 
 from typing import NamedTuple
@@ -24,6 +30,7 @@ from iminuit import Minuit
 from joblib import Parallel, delayed
 from tqdm import tqdm
 
+from lights.constants import CVL_SM
 from lights.likelihoods import (
     LEP_mu,
     LEP_N_norm,
@@ -49,7 +56,7 @@ from lights.likelihoods import (
     np_templates,
 )
 from lights.load_data import BaBar, BelleII
-from lights.models import B_Bs, check_model
+from lights.models import B_Bs, Model, check_model
 from lights.signal_rates import NU_BaBar, NU_BelleII, NU_BelleII_public
 
 # Each fit: the B -> K(*) likelihoods it adds (their NP templates, in this order), its compiled
@@ -93,8 +100,25 @@ def _check_experiment(experiment):
         raise ValueError(f"Unknown experiment {experiment!r}; expected one of {EXPERIMENTS}")
 
 
-def _templates(experiment, model_1=None, model_2=None):
-    "NP Templates of a fit: one Templates, or a tuple of them for the combined fits (see _PARTS)."
+def _check_no_interference(*models):
+    "Raise a ValueError for a model that interferes with the SM: the WET channel with C_VL or C_VR."
+    for model in models:
+        if model is not None and model.channel.name == "nunu" and ({"CVL", "CVR"} & set(model.couplings)):
+            raise ValueError(
+                f"{model} interferes with the SM, whose rate these fits add to the NP rate; fit the vector "
+                "WET couplings C_VL, C_VR (with the SM included) with fit_WET_vector. The scalar and "
+                "tensor couplings (CSL, CSR, CTL) do not interfere and can be used here."
+            )
+
+
+def _templates(experiment, model_1=None, model_2=None, *, interfering=False):
+    """NP Templates of a fit: one Templates, or a tuple of them for the combined fits (see _PARTS).
+
+    Models that interfere with the SM are rejected (see _check_no_interference), unless
+    interfering is True (fit_WET_vector, which includes the SM in them).
+    """
+    if not interfering:
+        _check_no_interference(model_1, model_2)
     parts = tuple(np_templates(e, model_1, model_2) for e in _PARTS[experiment])
     return parts[0] if len(parts) == 1 else parts
 
@@ -170,13 +194,47 @@ def _x_init(kind, head=(1.0, 0.0, 0.0)):
     return x
 
 
-def _fit(kind, templates, x_init, fixed, extra=None):
+def _objective(kind, templates, extra=None, head=None):
+    """-2 ln L of a fit and its gradient, as functions of the fitted parameter vector.
+
+    head: optional 3 x 3 matrix A; the fitted parameters are then theta with
+    x[0:3] = A theta[0:3] (the nuisance params. are unchanged), e.g. the WET vector couplings
+    (see fit_WET_vector). The gradient follows by the chain rule, A^T dF/dx[0:3].
+    """
+    parts = (templates,) if isinstance(templates, Templates) else tuple(templates)
+    args = tuple(np.ascontiguousarray(a, dtype=float) for t in parts for a in t)
+    logLL, grad = _LOGLL[kind], _GRAD[kind]
+
+    def to_x(theta):
+        if head is None:
+            return theta
+        x = np.array(theta, dtype=float)
+        x[:3] = head @ x[:3]
+        return x
+
+    def func(theta):
+        x = to_x(theta)
+        return logLL(x, *args) + (extra[0](x) if extra is not None else 0.0)
+
+    def gfunc(theta):
+        x = to_x(theta)
+        g = grad(x, *args) + (extra[1](x) if extra is not None else 0.0)
+        if head is not None:
+            g[:3] = head.T @ g[:3]
+        return g
+
+    return func, gfunc
+
+
+def _fit(kind, templates, x_init, fixed, extra=None, head=None):
     """Run one Migrad fit and return the Minuit object.
 
     kind:      one of EXPERIMENTS
     templates: the NP Templates of the experiment; for the combined fits a pair (Belle II, BaBar)
     fixed:     names of the fixed parameters among x0 (mu_SM), x1, x2
     extra:     optional (f, grad) added to the likelihood (e.g. LEP, see _lep_term)
+    head:      optional linear map of the first three fitted params. to (mu_SM, x1, x2) (see
+               _objective); they are then free (unless fixed), and x_init is in the fitted params.
 
     The analytic gradient is passed to Migrad, which runs with strategy 0: the minimum is
     found with far fewer calls because no numerical error matrix is built along the way (see
@@ -184,15 +242,17 @@ def _fit(kind, templates, x_init, fixed, extra=None):
     keep the Hessian non-singular (unless an extra term, such as LEP, may depend on it).
     """
     parts = (templates,) if isinstance(templates, Templates) else tuple(templates)
-    args = tuple(np.ascontiguousarray(a, dtype=float) for t in parts for a in t)
-    logLL, grad = _LOGLL[kind], _GRAD[kind]
-    if extra is None:
-        func = lambda x: logLL(x, *args)
-        gfunc = lambda x: grad(x, *args)
-    else:
-        f_extra, g_extra = extra
-        func = lambda x: logLL(x, *args) + f_extra(x)
-        gfunc = lambda x: grad(x, *args) + g_extra(x)
+    func, gfunc = _objective(kind, templates, extra, head)
+    if head is not None:
+        m = Minuit(func, np.array(x_init, dtype=float), grad=gfunc)
+        m.errordef = 1.0
+        m.limits = [(None, None)] * 3 + _limits(kind)[3:]
+        if fixed:
+            m.fixed[list(fixed)] = True
+        m.strategy = 0
+        m.tol = 0.01
+        m.migrad(ncall=100000)
+        return m
 
     # Expected NP events at unit coupling, summed over the experiments, for x1 and x2
     n_events = [sum(float(np.sum(t.s_NP_1)) for t in parts), sum(float(np.sum(t.s_NP_2)) for t in parts)]
@@ -215,20 +275,17 @@ def _fit(kind, templates, x_init, fixed, extra=None):
     return m
 
 
-def _errors(kind, templates, m, extra=None, h=1e-4):
-    """Parameter errors at the minimum of a fit (m, from _fit), from the Hessian of the analytic gradient.
+def _covariance(kind, templates, m, extra=None, head=None, h=1e-4):
+    """Covariance of the fitted params. at the minimum of a fit (m, from _fit), from the Hessian of the analytic gradient.
 
     The Hessian is computed by central differences of the gradient (exact up to O(h^2)), and
-    the covariance of -2 ln L is 2 H^-1; fixed parameters get error 0. This replaces Minuit's
+    the covariance of -2 ln L is 2 H^-1; fixed parameters get zero rows and columns. This replaces Minuit's
     Hesse, whose numerical second derivatives depend on the step sizes left by Migrad (with the
     public Belle II likelihood it underestimated the error of mu_SM by 4.5%) and are distorted
     for parameters near a limit (BaBar's mu_SM: 4.1 instead of 7.2). Near a limit the error is
     the parabolic one, ignoring the limit.
     """
-    parts = (templates,) if isinstance(templates, Templates) else tuple(templates)
-    args = tuple(np.ascontiguousarray(a, dtype=float) for t in parts for a in t)
-    grad = _GRAD[kind]
-    g = (lambda x: grad(x, *args)) if extra is None else (lambda x: grad(x, *args) + extra[1](x))
+    g = _objective(kind, templates, extra, head)[1]
     x = np.array(m.values)
     free = [i for i in range(len(x)) if not m.fixed[i]]
     H = np.empty((len(free), len(free)))
@@ -236,9 +293,14 @@ def _errors(kind, templates, m, extra=None, h=1e-4):
         dx = np.zeros(len(x))
         dx[i] = h
         H[a] = ((g(x + dx) - g(x - dx)) / (2 * h))[free]
-    errors = np.zeros(len(x))
-    errors[free] = np.sqrt(np.diag(2 * np.linalg.inv(0.5 * (H + H.T))))
-    return errors
+    cov = np.zeros((len(x), len(x)))
+    cov[np.ix_(free, free)] = 2 * np.linalg.inv(0.5 * (H + H.T))
+    return cov
+
+
+def _errors(kind, templates, m, extra=None, head=None):
+    "Parameter errors at the minimum of a fit (see _covariance); fixed parameters get error 0."
+    return np.sqrt(np.diag(_covariance(kind, templates, m, extra, head)))
 
 
 def _normalise(tpl, target=100.0):
@@ -321,6 +383,77 @@ def best_fit_model(experiment, model, *, errors=True):
     check_model(model, allow_none=False)
     fit = min_logLL(experiment, model, errors=errors)
     return model.scaled(abs(fit.value)), fit
+
+
+# WET vector couplings: B -> K depends on C_VL + C_VR only, and B -> K* splits into a part
+# proportional to |C_VL + C_VR|^2 (form factor V) and one proportional to |C_VL - C_VR|^2 (A_1,
+# A_12), without interference between them (massless neutrinos). The full rate, the SM and its
+# interference with new physics included, is therefore x1^2 T_+ + x2^2 T_- with the positive
+# templates T_+ (C_VL = C_VR = 1/2) and T_- (C_VL = -C_VR = 1/2), x1 = C_VL + C_VR and
+# x2 = C_VL - C_VR, and mu_SM = 0. At the SM, T_+ and T_- add up to the SM templates exactly
+# (tests/test_fits.py).
+_WET_PLUS = Model("nunu", 0.0, CVL=0.5, CVR=0.5)
+_WET_MINUS = Model("nunu", 0.0, CVL=0.5, CVR=-0.5)
+_WET_HEAD = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 1.0], [0.0, 1.0, -1.0]])  # (0, C_VL, C_VR) -> (mu_SM, x1, x2)
+
+
+class WETVectorFit(NamedTuple):
+    """Result of fit_WET_vector.
+
+    model:      the best-fit Model("nunu", CVL, CVR): the total B -> K(*) nu nu-bar rate, SM included
+    CVL, CVR:   the best-fit couplings (SM: C_VL = CVL_SM, C_VR = 0)
+    errors:     their errors (0 for a fixed coupling; None without errors)
+    covariance: their 2 x 2 covariance (None without errors)
+    delta_chi2: -2 ln L relative to the SM
+    minuit:     the Minuit object of the fit (params. 0, C_VL, C_VR, nuisances)
+    """
+
+    model: object
+    CVL: float
+    CVR: float
+    errors: object
+    covariance: object
+    delta_chi2: float
+    minuit: object
+
+
+def fit_WET_vector(experiment, *, CVL=None, CVR=None, errors=True):
+    """Fit the WET vector couplings C_VL and C_VR of B -> K(*) nu nu-bar, the SM included in them.
+
+    The total rate is that of Model("nunu", 0, CVL = CVL, CVR = CVR), so the interference of
+    new physics with the SM is included exactly (the SM is C_VL = CVL_SM = 6.60, C_VR = 0, in
+    the normalisation of arXiv:2507.12393). experiment: one of EXPERIMENTS. CVL, CVR: pass a
+    value to fix that coupling, e.g. fit_WET_vector("combined", CVL = CVL_SM) fits C_VR alone
+    (right-handed new physics); with both None both are fitted.
+
+    The rates depend on (C_VL + C_VR)^2 and (C_VL - C_VR)^2 only: the overall sign and the
+    exchange C_VL <-> C_VR are not determined (with both free the fit starts at the SM and
+    returns the solution with C_VL > |C_VR| nearest to it), and B -> K alone (Belle II)
+    determines only C_VL + C_VR. Returns a WETVectorFit.
+    """
+    _check_experiment(experiment)
+    tpl = _templates(experiment, _WET_PLUS, _WET_MINUS, interfering=True)
+    extra = _lep_term((0.0, 0.0)) if experiment in _WITH_LEP else None  # no Bs -> nu nu-bar: a constant
+
+    def x_init(cvl, cvr):
+        x = np.zeros(_NPAR[experiment])
+        x[1:3] = cvl, cvr
+        return x
+
+    sm = _fit(experiment, tpl, x_init(CVL_SM, 0.0), ["x0", "x1", "x2"], extra, _WET_HEAD).fval
+    fixed = ["x0"] + (["x1"] if CVL is not None else []) + (["x2"] if CVR is not None else [])
+    m = _fit(
+        experiment, tpl, x_init(CVL_SM if CVL is None else CVL, 0.0 if CVR is None else CVR), fixed, extra, _WET_HEAD
+    )
+    cvl, cvr = m.values[1], m.values[2]
+    if cvl < 0:  # the overall sign is not determined: take C_VL >= 0
+        cvl, cvr = -cvl, -cvr
+    cov = err = None
+    if errors:
+        cov = _covariance(experiment, tpl, m, extra, _WET_HEAD)[1:3, 1:3] if len(fixed) < 3 else np.zeros((2, 2))
+        err = tuple(np.sqrt(np.diag(cov)))
+    model = Model("nunu", 0.0, CVL=cvl, CVR=cvr)
+    return WETVectorFit(model, cvl, cvr, err, cov, m.fval - sm, m)
 
 
 def profile_logLL_SM(experiment, mu):
@@ -416,6 +549,7 @@ def profile_logLL_scan(
 
     # ---- Signal templates (computed once per experiment, shared by every grid point) ----
     needed = {part for kind in kinds.values() if kind for part in _PARTS[kind]}
+    _check_no_interference(model_1, model_2)
     tpl = {e: np_templates(e, model_1, model_2) for e in needed}
     fits = {}
     for name, kind in kinds.items():

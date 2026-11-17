@@ -33,3 +33,4 @@ LAMBDAt = 0.04185  # Vtb Vts^* in SM
 Xt = 1.469  # NLO QCD and two-loop electroweak corrections
 SWsq = 0.23121  # Sine of weak mixing angle squared
 CSM = 4 * GF * LAMBDAt / np.sqrt(2) * Xt / SWsq * ALPHA / (2 * np.pi)
+CVL_SM = Xt / SWsq * ALPHA / ALPHA_MB  # SM value of the WET coefficient C_VL of B -> K(*) nu nu-bar (6.60)
