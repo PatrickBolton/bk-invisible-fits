@@ -1,6 +1,6 @@
 # Operators basis
 
-For the process $B \to K^{(*)} E_{\rm miss}$, this code implements the following operators. For $B \to K^{(*)} \nu \bar{\nu}$, the WET operators:
+For the process $B \to K^{(\ast)} E_{\rm miss}$, this code implements the following operators. For $B \to K^{(\ast)} \nu \bar{\nu}$, the WET operators:
 
 $$ \hat{C}_{\rm VL} (\bar{s}_L \gamma_\mu b_L) (\bar{\nu}_L \gamma^\mu \nu_L), \quad \hat{C}_{\rm VR} (\bar{s}_R \gamma_\mu b_R)(\bar{\nu}_L \gamma^\mu \nu_L),$$
 $$\hat{C}_{\rm SL} (\bar{s}_R b_L) (\bar{\nu}_L^c \nu_L), \quad \hat{C}_{\rm SR} (\bar{s}_L b_R)(\bar{\nu}_L^c \nu_L),$$
