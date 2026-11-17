@@ -70,18 +70,18 @@ parameter errors come from the Hessian of the analytic gradient.
 **Belle II's public likelihood.** The experiment `"BelleII_public"` (its inclusive-tag part)
 and the combined fit `"combined_public"` use Belle II's released HistFactory model, evaluated
 by a compiled reimplementation that agrees with pyhf. NP signals are obtained by kinematic
-reweighting: Belle II's joint number density in true q² times the model's branching fraction in
-each q² bin. Our own Belle II likelihood (`"BelleII"`; `belle2 = "lights"` in the scans) and the public one differ mainly in their high-q²
+reweighting: Belle II's joint number density in true $q^2$ times the model's branching fraction in
+each $q^2$ bin. Our own Belle II likelihood (`"BelleII"`; `belle2 = "lights"` in the scans) and the public one differ mainly in their high-$q^2$
 backgrounds, so they prefer different NP shapes: the public likelihood favours scalar and
 tensor couplings more than ours does.
 
 **Interference with the SM.** NP rates add to the SM, so the fits of invisible particles and
 of the scalar and tensor WET couplings assume no interference with it, which holds for these.
-The vector WET couplings C_VL and C_VR do interfere. Their fits (`fit_WET_vector`, `fit_WET`)
+The vector WET couplings $C_{\rm VL}$ and $C_{\rm VR}$ do interfere. Their fits (`fit_WET_vector`, `fit_WET`)
 include the SM in the couplings, using the fact that the rate is a sum of positive terms in
-(C_VL + C_VR)², (C_VL − C_VR)², (C_SL + C_SR)², (C_SL − C_SR)² and C_TL². The other fits reject
+($C_{\rm VL} + C_{\rm VR})^2$, $(C_{\rm VL} − C_{\rm VR})^2$, $(C_{\rm SL} + C_{\rm SR})^2$, $(C_{\rm SL} − C_{\rm SR})$^2 and $C_{\rm TL}^2$. The other fits reject
 these couplings. The WET couplings are normalised as in arXiv:2507.12393, with
-α_e(m_b) = 1/133, so that the SM is C_VL = 6.60.
+$α_e(m_b) = 1/133$, so that the SM is $C_{\rm VL} = 6.60$.
 
 **Slices and profiles.** `profile_logLL_scan` fixes mu_SM = 1 and has no couplings besides
 the two scanned, so its grids are slices for a scenario with just those couplings.
@@ -93,8 +93,8 @@ each grid point (profiles), so their grids also reflect what those do.
 | Module | Contents |
 | --- | --- |
 | `lights.models` | `Model` and the channel registry `CHANNELS` |
-| `lights.branching_fractions` | B → K(\*) X(X̄) and Bs → X X̄ rates for each channel, and the WET rate |
-| `lights.form_factors` | B → K and B → K\* form factors (GRDV fit) |
+| `lights.branching_fractions` | $B \to K^{(*)} X(\bar{X})$ and Bs → X X̄ rates for each channel, and the WET rate |
+| `lights.form_factors` | $B \to K$ and $B \to K^*$ form factors (GRDV fit) |
 | `lights.load_data` | the experimental inputs, grouped as `BelleII`, `BaBar` and `BelleII_public` |
 | `lights.signal_rates` | binned signal predictions and their response to the theory inputs |
 | `lights.likelihoods` | likelihoods and gradients (compiled with numba), NP signal templates |

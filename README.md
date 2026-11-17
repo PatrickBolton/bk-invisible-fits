@@ -1,20 +1,20 @@
-# bk-invisible-fits: light new physics fits to B → K(\*) E_miss data
+# bk-invisible-fits: light new physics fits to $B \to K^{(*)} E_{\rm miss}$ data
 
-Belle II has found evidence for B⁺ → K⁺νν̄, with a rate 2.7σ above the Standard Model (SM) prediction. bk-invisible-fits tests
+Belle II has found evidence for $B^+ \to K^+ \nu \bar{\nu}$, with a rate 2.7σ above the Standard Model (SM) prediction. bk-invisible-fits tests
 whether new light invisible particles can explain it. It fits new-physics (NP) scenarios to the
-binned q² spectra of Belle II's B⁺ → K⁺ E_miss (inclusive tag) and BaBar's B⁰ → K\*⁰ E_miss,
-together with LEP's bound on B_s → invisible. The q² spectrum separates the scenarios, since
+binned q^2 spectra of Belle II's $B^+ \to K^+ E_{\rm miss}$ (inclusive tag) and BaBar's $B^0 \to K^{*0} E_{\rm miss}$,
+together with LEP's bound on $B_s \to \rm inv.$. The q² spectrum separates the scenarios, since
 each kind of particle and coupling gives a different shape.
 
 The scenarios are:
 
-- a light scalar, vector, fermion or spin-3/2 particle, produced singly (B → K X) or in
-  pairs (B → K X X̄) through the effective operators in [docs/operators.md](docs/operators.md);
-- the weak effective theory (WET) of B → K(\*)νν̄, with vector, scalar and tensor couplings.
+- a light scalar, vector, fermion or spin-3/2 particle, produced singly ($B \to K X$) or in
+  pairs ($B \to K X \bar{X}$) through the effective operators in [docs/operators.md](docs/operators.md);
+- the weak effective theory (WET) of $B \to K^{(*)} \nu \bar{\nu}$, with vector, scalar and tensor couplings.
   The vector couplings include the SM, so their interference with it is included.
 
 The code computes the branching fractions and the binned signal predictions of each
-experiment, including the Belle II q² smearing, form factor and efficiency uncertainties,
+experiment, including the Belle II q^2 smearing, form factor and efficiency uncertainties,
 and fits them with binned Poisson likelihoods. Belle II's public likelihood
 ([arXiv:2507.12393](https://arxiv.org/abs/2507.12393)) is implemented as an alternative to
 our own Belle II likelihood, and every fit can use either.
@@ -24,8 +24,8 @@ our own Belle II likelihood, and every fit can use either.
   <img src="docs/figures/WET_fit_public.png" width="48%" alt="Profile likelihood regions of the five WET couplings, fitted to Belle II's public likelihood and BaBar">
 </p>
 
-*Left: B → K and B → K\* spectra, normalised to the SM, for the SM and for the SM plus a
-light Dirac fermion pair ψψ̄ (m_ψ = 0.6 GeV) at its best-fit coupling. The bands are the form
+*Left: $B \to K$ and $B \to K^*$ spectra, normalised to the SM, for the SM and for the SM plus a
+light Dirac fermion pair $\psi\bar{\psi}$ ($m_\psi = 0.6$ GeV) at its best-fit coupling. The bands are the form
 factor and coupling uncertainties (notebook 05). Right: the WET couplings fitted to Belle II's
 public likelihood and BaBar; each panel profiles over the other three couplings (notebook 04).*
 
